@@ -84,7 +84,6 @@ def plot_energy_bias_resolution(bias_resolution, ax=None):
         ls='',
     )
     ax.set_xscale("log")
-    ax.set_yscale("log")
     ax.set_xlabel("True energy / TeV")
     ax.set_ylabel("Energy Resolution")
     return 0
@@ -117,10 +116,32 @@ def plot_background(bg_rate, rad_max, ax=None, label=None):
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("True energy / TeV")
-    ax.set_ylabel("Energy Resolution")
+    ax.set_ylabel("Background rate [1/s]")
     return 0
 
 
-def plot_psf(sens_hdu, ax=None):
+def plot_theta_cuts(theta_cuts, ax=None):
+
+    ax.errorbar(
+        0.5 * (theta_cuts['ENERG_LO'] + theta_cuts['ENERG_HI']).to_value(u.TeV),
+        theta_cuts['RAD_MAX'].T[:, 0].to_value(u.deg),
+        xerr=0.5 * (theta_cuts['ENERG_LO'] - theta_cuts['ENERG_HI']).to_value(u.TeV),
+        ls='',
+    )
+    ax.set_xscale("log")
+    ax.set_xlabel("True energy / TeV")
+    ax.set_ylabel("θ-cut / deg²")
     return 0
 
+
+def plot_gh_cuts(gh_cuts, ax=None):
+    ax.errorbar(
+        0.5 * (gh_cuts['low'] + gh_cuts['high']).to_value(u.TeV),
+        gh_cuts['cut'],
+        xerr=0.5 * (gh_cuts['low'] - gh_cuts['high']).to_value(u.TeV),
+        ls='',
+    )
+    ax.set_xscale("log")
+    ax.set_xlabel("True energy / TeV")
+    ax.set_ylabel("G/H-Cut")
+    return 0
