@@ -66,6 +66,27 @@ def main(gamma, proton, electron, irfoutput, obstime):
     MAX_GH_CUT_EFFICIENCY = 0.8
     GH_CUT_EFFICIENCY_STEP = 0.01
 
+    emin = 5 * u.GeV
+    emax = 50 * u.TeV
+
+    # event display uses much finer bins for the theta cut than
+    # for the sensitivity
+    theta_bins = add_overflow_bins(
+        create_bins_per_decade(emin, emax, bins_per_decade=25,)
+    )
+    # gammapy doesnt like 0 or inf energies
+    theta_bins[-1] = 100 * u.TeV
+    theta_bins[0] = 1 * u.GeV
+
+    sensitivity_bins = add_overflow_bins(
+        create_bins_per_decade(
+            emin, emax, bins_per_decade=5
+        )
+    )
+    sensitivity_bins[-1] = 100 * u.TeV
+    sensitivity_bins[0] = 1 * u.GeV
+
+
     particles = {
         "gamma": {
             "file": gamma,
@@ -114,19 +135,13 @@ def main(gamma, proton, electron, irfoutput, obstime):
         log.info("")
 
     gammas = particles["gamma"]["events"]
+
     # background table composed of both electrons and protons
     background = table.vstack([
         particles["proton"]["events"],
         particles["electron"]["events"]
     ])
 
-    # event display uses much finer bins for the theta cut than
-    # for the sensitivity
-    theta_bins = add_overflow_bins(
-        create_bins_per_decade(10 * u.GeV, 50 * u.TeV, 30,)
-    )
-    theta_bins[-1] = 100 * u.TeV
-    theta_bins[0] = 1 * u.GeV
 
     # this is a dummy to create the table necessary for the gh optimisation
     theta_cuts = calculate_percentile_cut(
@@ -136,16 +151,9 @@ def main(gamma, proton, electron, irfoutput, obstime):
         min_value=0.05 * u.deg,
         fill_value=0.5 * u.deg,
         max_value=0.5 * u.deg,
-        percentile=100,
+        percentile=100,  # heres the dummy
     )
 
-    sensitivity_bins = add_overflow_bins(
-        create_bins_per_decade(
-            10 * u.GeV, 50 * u.TeV, bins_per_decade=5
-        )
-    )
-    sensitivity_bins[-1] = 100 * u.TeV
-    sensitivity_bins[0] = 1 * u.GeV
 
     log.info("Optimizing G/H separation cut for best sensitivity")
     gh_cut_efficiencies = np.arange(
@@ -169,13 +177,14 @@ def main(gamma, proton, electron, irfoutput, obstime):
             tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
         )
 
+    # you could be smart and only use correct signs, hmmmm i like that idea
     # try to filter wrong signs -> does this break the background estimation?
-    mask_theta_cuts = (gammas["theta"] <= MAX_BG_RADIUS / ALPHA)
+    mask_theta_cuts = gammas['sign_correct']
     theta_cuts_opt = calculate_percentile_cut(
         gammas[gammas['selected_gh'] & mask_theta_cuts]["theta"],
         gammas[gammas['selected_gh'] & mask_theta_cuts]["reco_energy"],
         theta_bins,
-        percentile=50,
+        percentile=68,
         fill_value=0.5 * u.deg,
         max_value=0.5 * u.deg,
         min_value=0.05 * u.deg,
@@ -227,20 +236,20 @@ def main(gamma, proton, electron, irfoutput, obstime):
 
     # binnings for the irfs
     true_energy_bins = add_overflow_bins(
-        create_bins_per_decade(10 * u.GeV, 50 * u.TeV, 10)
+        create_bins_per_decade(emin, emax, 10)
     )
     true_energy_bins[-1] = 100 * u.TeV
     true_energy_bins[0] = 1 * u.GeV
 
     reco_energy_bins = add_overflow_bins(
-        create_bins_per_decade(10 * u.GeV, 50 * u.TeV, 10)
+        create_bins_per_decade(emin, emax, 5)
     )
     reco_energy_bins[-1] = 100 * u.TeV
     reco_energy_bins[0] = 1 * u.GeV
 
     fov_offset_bins = [0, 0.5] * u.deg
     source_offset_bins = np.arange(0, 1 + 1e-4, 1e-3) * u.deg
-    energy_migration_bins = np.geomspace(0.2, 5, 200)
+    energy_migration_bins = np.geomspace(0.2, 5, 100)
 
     for label, mask in masks.items():
         effective_area = effective_area_per_energy(

@@ -23,7 +23,9 @@ def read_to_pyirf(infile):
     }
 
     df = read_data(infile, 'events').dropna(subset=['source_x_prediction', 'source_y_prediction', 'gamma_energy_prediction', "gammaness"])
-
+    dist_cog = dist_pred = np.sqrt((df['x'] - df['src_x'])**2 + (df['y'] - df['src_y'])**2)
+    dist_pred = dist_pred = np.sqrt((df['source_x_prediction'] - df['src_x'])**2 + (df['source_y_prediction'] - df['src_y'])**2)
+    df['sign_correct'] = (dist_pred < dist_cog)
     events = QTable.from_pandas(df)    
 
     for new, in_ in COLUMN_MAP.items():

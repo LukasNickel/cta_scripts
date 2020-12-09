@@ -55,7 +55,7 @@ def main(pattern, cut_file, output):
         df['selected'] &= gh_mask
         df = df[df['selected']]
         ngh = len(df)
-        print('Events nach g/h cut: ', ngh, ngh/nevents, "%")
+        print('Events nach g/h cut: ', ngh, ngh/nevents*100, "%")
 
         pred = wobble_predictions_lst(df)
         df['ra_pred'], df['dec_pred'] = pred[0], pred[1]
@@ -97,7 +97,7 @@ def main(pattern, cut_file, output):
 
         df = df[theta_mask]
         ntheta = len(df)
-        print("Events nach theta cut: ", ntheta, ntheta/nevents, "%")
+        print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")
         pointing_columns_old = ['dragon_time', 'ra_pnt', 'dec_pnt']
         pointing_columns_new = ['TIME', 'RA_PNT', 'DEC_PNT']
 
@@ -123,10 +123,8 @@ def main(pattern, cut_file, output):
         event_header['TSTART'] = tstart
         event_header['TSTOP'] = tstop
 
-        # this is not part of ogadf, but gammapy requires it
-        event_header['MJDREFI'] = 53007  # ref time is this correct? 01.01.1970?
+        event_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
         event_header['MJDREFF'] = 0.
-
         event_header['ONTIME'] = tstop - tstart
         event_header['LIVETIME'] = event_header['ONTIME']
         event_header['DEADC'] = 1.
@@ -143,7 +141,7 @@ def main(pattern, cut_file, output):
         gtis['START'].unit = u.s
         gtis['STOP'].unit = u.s
         gti_header = DEFAULT_HEADER.copy()
-        gti_header['MJDREFI'] = 53007  # ref time is this correct? 01.01.1970?
+        gti_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
         gti_header['MJDREFF'] = 0.
         gti_header['TIMEUNIT'] = 's'
         gti_header['TIMESYS'] = 'UTC'  # ??
@@ -173,8 +171,8 @@ def main(pattern, cut_file, output):
             df['obs_id'].iloc[0],
             df_pointings['RA_PNT'].iloc[0],
             df_pointings['DEC_PNT'].iloc[0],
-            df_events['TIME'].min(),
-            df_events['TIME'].max(),
+            tstart,
+            tstop,
             1.
         ))
 
@@ -237,6 +235,11 @@ def main(pattern, cut_file, output):
     obs_header['HDUCLAS1'] = 'INDEX'
     obs_header['HDUCLAS2'] = 'OBS'
     obs_header['TELESCOP'] = 'LST1'
+    obs_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
+    obs_header['MJDREFF'] = 0.
+    obs_header['ONTIME'] = tstop - tstart
+    obs_header['LIVETIME'] = event_header['ONTIME']
+    obs_header['DEADC'] = 1.
     hdus = [
         fits.PrimaryHDU(),
         fits.BinTableHDU(observation_table, header=obs_header, name="OBS_INDEX"),
