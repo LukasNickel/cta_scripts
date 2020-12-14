@@ -1,14 +1,7 @@
-import matplotlib.pyplot as plt
 from pyirf.utils import cone_solid_angle
 import numpy as np
 import astropy.units as u
-from astropy.table import QTable
-import click
-import matplotlib
-if matplotlib.get_backend() == 'pgf':
-    from matplotlib.backends.backend_pgf import PdfPages
-else:
-    from matplotlib.backends.backend_pdf import PdfPages
+
 
 def plot_sensitivity(sensitivity, ax=None, label=None):
     unit = u.Unit('erg cm-2 s-1')
@@ -18,14 +11,19 @@ def plot_sensitivity(sensitivity, ax=None, label=None):
             (sensitivity['reco_energy_center'].to(u.TeV))**2
             * sensitivity['flux_sensitivity']
         ).to_value(unit),
-        xerr=(sensitivity['reco_energy_high'] - sensitivity['reco_energy_low']).to_value(u.TeV) / 2,
+        xerr=(
+            sensitivity['reco_energy_high'] - sensitivity['reco_energy_low']
+        ).to_value(u.TeV) / 2,
         ls='',
         label=label,
     )
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_xlabel("Reconstructed energy / TeV")
-    ax.set_ylabel(rf"$(E^2 \cdot \mathrm{{Flux Sensitivity}}) /$ ({unit.to_string('latex')})")
+    ax.set_ylabel(
+        rf"$(E^2 \cdot \mathrm{{Flux Sensitivity}}) /$ ({unit.to_string('latex')})"
+    )
+    ax.set_title('Sensitivity')
     return 0
 
 
@@ -41,6 +39,7 @@ def plot_aeff(area, ax=None, label=None):
     ax.set_yscale("log")
     ax.set_xlabel("True energy / TeV")
     ax.set_ylabel("Effective collection area / m²")
+    ax.set_title("Effective Area")
     return 0
 
 
@@ -58,6 +57,7 @@ def plot_edisp(edisp, ax=None, label=None):
     ax.set_yscale("log")
     ax.set_xlabel(r'$E_\mathrm{True} / \mathrm{TeV}$')
     ax.set_ylabel(r'$E_\mathrm{Reco} / E_\mathrm{True}$')
+    ax.set_title("Energy Dispersion")
     return 0
 
 
@@ -65,7 +65,9 @@ def plot_angular_resolution(ang_res, ax=None, label=None):
     ax.errorbar(
         0.5 * (ang_res['true_energy_low'] + ang_res['true_energy_high']).to_value(u.TeV),
         ang_res['angular_resolution'].to_value(u.deg),
-        xerr=0.5 * (ang_res['true_energy_high'] - ang_res['true_energy_low']).to_value(u.TeV),
+        xerr=0.5 * (
+            ang_res['true_energy_high'] - ang_res['true_energy_low']
+        ).to_value(u.TeV),
         ls='',
         label=label,
     )
@@ -73,14 +75,19 @@ def plot_angular_resolution(ang_res, ax=None, label=None):
     ax.set_xscale("log")
     ax.set_xlabel("True energy / TeV")
     ax.set_ylabel("Angular Resolution / deg")
+    ax.set_title("Angular Resolution")
     return 0
 
 
 def plot_energy_bias_resolution(bias_resolution, ax=None):
     ax.errorbar(
-        0.5 * (bias_resolution['true_energy_low'] + bias_resolution['true_energy_high']).to_value(u.TeV),
+        0.5 * (
+            bias_resolution['true_energy_low'] + bias_resolution['true_energy_high']
+        ).to_value(u.TeV),
         bias_resolution['resolution'],
-        xerr=0.5 * (bias_resolution['true_energy_high'] - bias_resolution['true_energy_low']).to_value(u.TeV),
+        xerr=0.5 * (
+            bias_resolution['true_energy_high'] - bias_resolution['true_energy_low']
+        ).to_value(u.TeV),
         ls='',
     )
     ax.set_xscale("log")
