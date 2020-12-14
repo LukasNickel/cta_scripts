@@ -25,20 +25,24 @@ def main(pattern, output, mc_alt, mc_az):
         bins=30,
         histtype='stepfilled',
         alpha=0.5,
+        label='Pointings'
     )
     if mc_alt:
-        ax_alt.axvline(mc_alt, linestyle='--', color='black')
-    ax_alt.set_title('ALT')
+        ax_alt.axvline(mc_alt, linestyle='--', color='black', label='Monte Carlo')
+    ax_alt.set_title('Altitude')
+    ax_alt.legend()
 
     ax_az.hist(
         np.rad2deg(pointings['az_tel'].values.flatten()),
         bins=30,
         histtype='stepfilled',
         alpha=0.5,
+        label='Pointings',
     )
     if mc_az:
-        ax_az.axvline(mc_az, linestyle='--', color='black')
-    ax_az.set_title('az')
+        ax_az.axvline(mc_az, linestyle='--', color='black', label='Monte Carlo')
+    ax_az.set_title('Azimuth')
+    ax_az.legend()
 
     fig.savefig(output)
 
