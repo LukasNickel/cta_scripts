@@ -185,8 +185,8 @@ def main(gamma, proton, electron, irfoutput, obstime):
         gammas[gammas['selected_gh'] & mask_theta_cuts]["reco_energy"],
         theta_bins,
         percentile=68,
-        fill_value=0.5 * u.deg,
-        max_value=0.5 * u.deg,
+        fill_value=0.32 * u.deg,
+        max_value=0.32 * u.deg,
         min_value=0.05 * u.deg,
     )
 
