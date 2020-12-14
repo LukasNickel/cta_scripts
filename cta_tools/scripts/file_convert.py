@@ -20,7 +20,7 @@ def main(infile, outfile, tel_name):
 
     parameters['focal_length'] = focal_length
     parameters = parameters[parameters['leakage_intensity_width_1'] < 0.2]
-    parameters = parameters[parameters['intensity'] > 20]
+    parameters = parameters[parameters['intensity'] > 0]
     to_h5py(parameters, outfile, key='events', mode = 'w')
 
     with tables.open_file(infile) as f:
