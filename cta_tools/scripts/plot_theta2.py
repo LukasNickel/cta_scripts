@@ -1,4 +1,3 @@
-from astropy.table import QTable
 from astropy.table import vstack
 import matplotlib.pyplot as plt
 import re
@@ -7,6 +6,7 @@ import click
 import numpy as np
 import astropy.units as u
 from cta_tools.plotting.theta2 import theta2
+from cta_tools.io import read_table
 
 
 @click.command()
@@ -23,10 +23,9 @@ def main(input_folder, output, offs, runs, min_energy):
     runs = []
     for f in input_files:
         if reg.match(str(f)):
-            t = QTable.read(f, "EVENTS")
+            t = read_table(f)
             emask = t['ENERGY'] > min_energy*u.GeV
             run_tables.append(t[emask])
-            print(t.meta["LIVETIME"]/60)
             live_time += t.meta["LIVETIME"]
             runs.append(f.stem.split('.')[0])
 
@@ -50,7 +49,7 @@ def main(input_folder, output, offs, runs, min_energy):
         theta_on**2,
         theta_off**2,
         scaling=alpha,
-        cut=10, #dummy
+        cut=10,  # dummy
         ontime=live_time*u.s,
         ax=ax,
         window=[0, xmax],
