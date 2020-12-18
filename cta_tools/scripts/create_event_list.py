@@ -28,17 +28,58 @@ DEFAULT_HEADER["HDUCLASS"] = "GADF"
 @click.argument('pattern')
 @click.argument('cut_file')
 @click.argument('output')
-def main(pattern, cut_file, output):
+@click.option('--theta/--no-theta', default=True)
+def main(pattern, cut_file, output, theta):
     files = Path(pattern).parent.glob(pattern.split('/')[-1])
     gh_cuts = QTable.read(cut_file, hdu="GH_CUTS")
     theta_cuts = QTable.read(cut_file, hdu="THETA_CUTS_OPT")
 
     observations = []
     index = []
+    livetimes = []
+    ontimes = []
+    starts = []
+    stops = []
+
+    # pretty random, might be too long
+    gti_thresh = 10
     for i, f in enumerate(files):
         df = read_data(f, 'events')
         tstart = df['dragon_time'].min()
         tstop = df['dragon_time'].max()
+        ontime = (tstop-tstart)
+        # from IPython import embed; embed()
+        # add a dummy time before the first event
+        timedeltas = np.diff(
+            np.insert(
+                df['dragon_time'].sort_values().values,
+                0,
+                0,
+            )
+        )
+        large_deltas = (np.abs(timedeltas) > gti_thresh)
+        gti_indices = np.split(
+            np.arange(len(df)),
+            np.where(large_deltas)[0],
+        )
+        # first entry will always be empty so we remove it 
+        del gti_indices[0]
+        gti_starts = []
+        gti_stops = []
+        livetime = 0
+        for i in gti_indices:
+            start = df['dragon_time'].iloc[i[0]]
+            stop = df['dragon_time'].iloc[i[-1]]
+            gti_starts.append(start)
+            gti_stops.append(stop)
+            livetime += (stop-start)
+
+        # for the index table
+        starts.append(tstart)
+        stops.append(tstop)
+        ontimes.append(ontime)
+        livetimes.append(livetime)
+
         df.dropna(
             subset=['gamma_energy_prediction', 'gammaness', 'disp_prediction'],
             inplace=True
@@ -46,6 +87,7 @@ def main(pattern, cut_file, output):
         nevents = len(df)
         print("\nEvents in run: ", nevents)
         df['selected'] = True
+        #df['selected'] = (df['gammaness'] > 0.6)
         gh_mask = evaluate_binned_cut(
             df['gammaness'],
             u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
@@ -60,9 +102,13 @@ def main(pattern, cut_file, output):
         pred = wobble_predictions_lst(df)
         df['ra_pred'], df['dec_pred'] = pred[0], pred[1]
         df['theta_on'], theta_offs = pred[2], pred[3]
+        thetas = np.array(theta_offs + [pred[2]])
         df['ra_pnt'], df['dec_pnt'] = pred[4], pred[5]
+
+        # theta cuts always on min distance
+        # assuming cuts are smaller than off size distance
         theta_mask = evaluate_binned_cut(
-            u.Quantity(df['theta_on'], u.deg, copy=False),
+            u.Quantity(thetas.min(axis=0), u.deg, copy=False),
             u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
             theta_cuts,
             operator.le
@@ -87,17 +133,12 @@ def main(pattern, cut_file, output):
         }
         for i, thetas in enumerate(theta_offs):
             df[f'theta_off{i}'] = thetas
-            theta_mask |= evaluate_binned_cut(
-                u.Quantity(df[f'theta_off{i}'], u.deg, copy=False),
-                u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-                theta_cuts,
-                operator.le
-            )
             event_columns[f'theta_off{i}'] = f'THETA_OFF{i}'
 
-        df = df[theta_mask]
-        ntheta = len(df)
-        print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")
+        if theta:
+            df = df[theta_mask]
+            ntheta = len(df)
+            print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")
         pointing_columns_old = ['dragon_time', 'ra_pnt', 'dec_pnt']
         pointing_columns_new = ['TIME', 'RA_PNT', 'DEC_PNT']
 
@@ -109,8 +150,9 @@ def main(pattern, cut_file, output):
 
         df_gti = pd.DataFrame()
 
-        df_gti['START'] = [tstart]
-        df_gti['STOP'] = [tstop]
+        # from IPython import embed; embed()
+        df_gti['START'] = gti_starts
+        df_gti['STOP'] = gti_stops
 
         events = QTable.from_pandas(df_events)
         events['RA'].unit = u.deg
@@ -125,9 +167,9 @@ def main(pattern, cut_file, output):
 
         event_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
         event_header['MJDREFF'] = 0.
-        event_header['ONTIME'] = tstop - tstart
-        event_header['LIVETIME'] = event_header['ONTIME']
-        event_header['DEADC'] = 1.
+        event_header['ONTIME'] = ontime
+        event_header['LIVETIME'] = livetime
+        event_header['DEADC'] = (livetime/ontime)
         # assuming constant pointing
         event_header['RA_PNT'] = df_pointings['RA_PNT'].iloc[0]
         event_header['DEC_PNT'] = df_pointings['DEC_PNT'].iloc[0]
@@ -173,7 +215,7 @@ def main(pattern, cut_file, output):
             df_pointings['DEC_PNT'].iloc[0],
             tstart,
             tstop,
-            1.
+            livetime/ontime
         ))
 
         index.append((
@@ -237,9 +279,9 @@ def main(pattern, cut_file, output):
     obs_header['TELESCOP'] = 'LST1'
     obs_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
     obs_header['MJDREFF'] = 0.
-    obs_header['ONTIME'] = tstop - tstart
-    obs_header['LIVETIME'] = event_header['ONTIME']
-    obs_header['DEADC'] = 1.
+    obs_header['ONTIME'] = sum(ontimes)
+    obs_header['LIVETIME'] = sum(livetimes)
+    obs_header['DEADC'] = (sum(livetimes) / sum(ontimes))
     hdus = [
         fits.PrimaryHDU(),
         fits.BinTableHDU(observation_table, header=obs_header, name="OBS_INDEX"),
