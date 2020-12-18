@@ -1,20 +1,8 @@
-from ctapipe.coordinates import CameraFrame
 import numpy as np
-from astropy.io import fits
-from pathlib import Path
-from astropy.table import QTable
-import pandas as pd
-from pyirf.cuts import evaluate_binned_cut
-from pyirf.binning import calculate_bin_indices
-import operator
-from aict_tools.io import read_data
-import click
 import astropy.units as u
-from astropy.coordinates import SkyCoord, AltAz, EarthLocation, SkyOffsetFrame
-from astropy.time import Time
+from astropy.coordinates import SkyCoord, SkyOffsetFrame
 from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
 erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
-
 
 
 def calc_theta_off(
@@ -33,9 +21,10 @@ def calc_theta_off(
 
     theta_offs = []
     for off in range(1, n_off + 1):
+        new_phi = phi0 + 2 * np.pi * off / (n_off + 1)
         off_pos = SkyCoord(
-            lon=r * np.sin(phi0 + 2 * np.pi * off / (n_off + 1)),
-            lat=r * np.cos(phi0 + 2 * np.pi * off / (n_off + 1)),
+            lon=r * np.sin(new_phi),
+            lat=r * np.cos(new_phi),
             frame=fov_frame,
         )
         theta_offs.append(off_pos.separation(reco_fov).to_value(u.deg))
@@ -63,11 +52,11 @@ def calc_theta_off_cam(
         x_off = r * np.cos(phi + i * 2 * np.pi / (n_off + 1))
         y_off = r * np.sin(phi + i * 2 * np.pi / (n_off + 1))
         dist_off = (
-            (source_coord.x.to_value(u.m) - reco_coord.x.to_value(u.m))**2
-            + (source_coord.y.to_value(u.m) - reco_coord.y.to_value(u.m))**2
+            (x_off.to_value(u.m) - reco_coord.x.to_value(u.m))**2
+            + (y_off.to_value(u.m) - reco_coord.y.to_value(u.m))**2
         )
         theta_offs.append(
-            np.rad2deg(np.sqrt(dist_on) / 28)
+            np.rad2deg(np.sqrt(dist_off) / 28)
         )
 
     return theta_on, theta_offs

@@ -15,7 +15,7 @@ from astropy.time import Time
 from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
 erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
 from cta_tools.reco.theta import calc_theta_off
-from cta_tools.reco.theta import calc_theta_off
+from cta_tools.reco.theta import calc_theta_off_cam
 
 
 def wobble_predictions_lst(df, source='crab', n_off=5):
@@ -50,6 +50,11 @@ def wobble_predictions_lst(df, source='crab', n_off=5):
 
     src = SkyCoord.from_name(source)
     theta_on, theta_offs = calc_theta_off(src, icrs_pred, pointing_icrs, n_off=n_off)
+    #theta_on, theta_offs = calc_theta_off_cam(
+    #    src.transform_to(camera_frame),
+    #    cam_pred,
+    #    n_off=n_off
+    #)
     return (
         icrs_pred.ra.to_value(u.deg),
         icrs_pred.dec.to_value(u.deg),
