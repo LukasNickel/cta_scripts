@@ -25,7 +25,11 @@ def wobble_predictions_lst(df, source='crab', n_off=5):
         28.76139 * u.deg,
         2184 * u.m
     )
-    obstime = Time(df.dragon_time.values, format='unix')
+    if 'dragon_time' in df.keys():
+        obstime = Time(df.dragon_time.values, format='unix')
+    else:
+        obstime = Time('2013-11-01T03:00')
+        print('Using MC default time')
     altaz = AltAz(location=location, obstime=obstime)
 
     pointing = SkyCoord(
