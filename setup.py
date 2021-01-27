@@ -11,9 +11,11 @@ setup(
             'plot_theta2 = cta_tools.scripts.plot_theta2:main',
             'plot_irfs = cta_tools.scripts.plot_irfs:main',
             'plot_pointings = cta_tools.scripts.plot_pointings:main',
+            'plot_features = cta_tools.scripts.plot_features:main',
             'mc_data_comparisons = cta_tools.scripts.mc_data_comparisons:main',
             'create_irfs = cta_tools.scripts.create_irfs:main',
             'create_event_list = cta_tools.scripts.create_event_list:main',
+            'evaluate_cuts = cta_tools.scripts.evaluate_cuts:main',
             'estimate_flux = cta_tools.scripts.estimate_flux:main',
         ]
     }
