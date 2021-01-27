@@ -46,8 +46,15 @@ def read_to_pyirf(infile):
     events.columns['reco_alt'], events.columns['reco_az'] = transform_predictions(events)
     events['gh_score'].fill_value = -1
     events['reco_energy'].fill_value = -1
+    sim_info = read_sim_info(infile)
 
-    run_info = QTable.from_pandas(read_data(infile, 'runs'))
+
+    return events.filled(), sim_info
+
+
+
+def read_sim_info(path):
+    run_info = read_table(path, key='runs')
     e_min = np.unique(run_info.columns["energy_range_min"])
     assert len(e_min) == 1
     e_max = np.unique(run_info.columns["energy_range_max"])
@@ -71,15 +78,19 @@ def read_to_pyirf(infile):
         viewcone=u.Quantity(view_cone[0], u.deg),
     )
 
-    return events.filled(), sim_info
+    return sim_info
 
 
-def read_table(path):
+def read_table(path, columns=None, key='events'):
     """
     Internal helper to use for files before and after converting to fits.
     """
     try:
-        df = pd.read_hdf(path, 'events')
+        df = read_data(path, key=key, columns=columns,)
         return QTable.from_pandas(df)
     except:
-        return QTable.read(path, 'EVENTS')
+        t = QTable.read(path, 'EVENTS')
+        if columns:
+            return t[columns]
+        else:
+            return t
