@@ -15,7 +15,7 @@ erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
 
 
 DEFAULT_HEADER = fits.Header()
-DEFAULT_HEADER["CREATOR"] = f"Lukas Nickel"
+DEFAULT_HEADER["CREATOR"] = "Lukas Nickel"
 # fmt: off
 DEFAULT_HEADER["HDUDOC"] = (
     "https://github.com/open-gamma-ray-astro/gamma-astro-data-formats"
@@ -45,6 +45,9 @@ def main(pattern, cut_file, output, theta):
     gti_thresh = 10
     for i, f in enumerate(files):
         df = read_data(f, 'events')
+        df_selection = read_data(f, 'cuts')
+        print(f, len(df), len(df_selection))
+        #from IPython import embed; embed()
         tstart = df['dragon_time'].min()
         tstop = df['dragon_time'].max()
         ontime = (tstop-tstart)
@@ -80,65 +83,73 @@ def main(pattern, cut_file, output, theta):
         ontimes.append(ontime)
         livetimes.append(livetime)
 
-        df.dropna(
-            subset=['gamma_energy_prediction', 'gammaness', 'disp_prediction'],
-            inplace=True
-        )
         nevents = len(df)
         print("\nEvents in run: ", nevents)
         df['selected'] = True
         #df['selected'] = (df['gammaness'] > 0.6)
-        gh_mask = evaluate_binned_cut(
-            df['gammaness'],
-            u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-            gh_cuts,
-            operator.ge
-        )
-        df['selected'] &= gh_mask
-        df = df[df['selected']]
-        ngh = len(df)
+#        gh_mask = evaluate_binned_cut(
+#            df['gammaness'],
+#            u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
+#            gh_cuts,
+#            operator.ge
+#        )
+#        df['selected'] &= gh_mask
+        #df = df[df['selected']]
+        df['selected'] = df_selection['passed_gh'].values
+        ngh = np.count_nonzero(df['selected'])
         print('Events nach g/h cut: ', ngh, ngh/nevents*100, "%")
 
-        pred = wobble_predictions_lst(df)
-        df['ra_pred'], df['dec_pred'] = pred[0], pred[1]
-        df['theta_on'], theta_offs = pred[2], pred[3]
-        thetas = np.array(theta_offs + [pred[2]])
-        df['ra_pnt'], df['dec_pnt'] = pred[4], pred[5]
+        #pred = wobble_predictions_lst(df)
+        #df['ra_pred'], df['dec_pred'] = pred[0], pred[1]
+        #df['theta_on'], theta_offs = pred[2], pred[3]
+        #thetas = np.array(theta_offs + [pred[2]])
+        #df['ra_pnt'], df['dec_pnt'] = pred[4], pred[5]
 
         # theta cuts always on min distance
         # assuming cuts are smaller than off size distance
-        theta_mask = evaluate_binned_cut(
-            u.Quantity(thetas.min(axis=0), u.deg, copy=False),
-            u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-            theta_cuts,
-            operator.le
-        )
-        ebins = np.append(theta_cuts["low"], theta_cuts["high"][-1])
-        bin_index = calculate_bin_indices(
-            u.Quantity(
-                df['gamma_energy_prediction'].values,
-                u.TeV,
-                copy=False),
-            ebins
-        )
-        df['theta_cut_value'] = theta_cuts["cut"][bin_index]
+        thetas = np.array([df[x] for x in df.columns if x.startswith('theta')])
+        #theta_mask = (thetas.min(axis=0) < df['cut_theta'])
+        #theta_mask = evaluate_binned_cut(
+        #    u.Quantity(thetas.min(axis=0), u.deg, copy=False),
+        #    u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
+        #    theta_cuts,
+        #    operator.le
+        #)
+        #ebins = np.append(theta_cuts["low"], theta_cuts["high"][-1])
+        #bin_index = calculate_bin_indices(
+        #    u.Quantity(
+        #        df['gamma_energy_prediction'].values,
+        #        u.TeV,
+        #        copy=False),
+        #    ebins
+        #)
+        #df['theta_cut_value'] = theta_cuts["cut"][bin_index]
+        #df['theta_cut_value'] = theta_cuts["cut"][bin_index]
         event_columns = {
             'ra_pred': 'RA',
             'dec_pred': 'DEC',
             'event_id': 'EVENT_ID',
             'dragon_time': 'TIME',
             'gamma_energy_prediction': 'ENERGY',
-            'theta_on': 'THETA_ON',
-            'theta_cut_value': 'THETA_CUT_VALUE',
         }
-        for i, thetas in enumerate(theta_offs):
+        for i, thetas in enumerate(thetas[1:]):
             df[f'theta_off{i}'] = thetas
             event_columns[f'theta_off{i}'] = f'THETA_OFF{i}'
 
         if theta:
-            df = df[theta_mask]
-            ntheta = len(df)
+            #df = df[theta_mask]
+            #df = df[df_selection['passed_theta'].values]
+            df['selected'] &= df_selection['passed_theta'].values
+            ntheta = np.count_nonzero(df['selected'])
             print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")
+
+        df = df[df['selected']]
+
+        df.dropna(
+            subset=['gamma_energy_prediction', 'gammaness', 'disp_prediction'],
+            inplace=True
+        )
+ 
         pointing_columns_old = ['dragon_time', 'ra_pnt', 'dec_pnt']
         pointing_columns_new = ['TIME', 'RA_PNT', 'DEC_PNT']
 
@@ -168,8 +179,8 @@ def main(pattern, cut_file, output, theta):
         event_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
         event_header['MJDREFF'] = 0.
         event_header['ONTIME'] = ontime
-        event_header['LIVETIME'] = livetime
-        event_header['DEADC'] = (livetime/ontime)
+        event_header['DEADC'] = 1/(1+2.6e-5*2800)# taken from the lstchain pr (livetime/ontime)
+        event_header['LIVETIME'] = event_header["DEADC"]*event_header["ONTIME"]
         # assuming constant pointing
         event_header['RA_PNT'] = df_pointings['RA_PNT'].iloc[0]
         event_header['DEC_PNT'] = df_pointings['DEC_PNT'].iloc[0]
