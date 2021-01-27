@@ -21,6 +21,7 @@ from pyirf.spectral import (
     calculate_event_weights,
     PowerLaw,
     CRAB_HEGRA,
+    CRAB_MAGIC_JHEAP2015,
     IRFDOC_PROTON_SPECTRUM,
     IRFDOC_ELECTRON_SPECTRUM,
 )
@@ -71,9 +72,10 @@ def main(gamma, proton, electron, irfoutput, obstime):
 
     # event display uses much finer bins for the theta cut than
     # for the sensitivity
-    theta_bins = add_overflow_bins(
-        create_bins_per_decade(emin, emax, bins_per_decade=25,)
-    )
+    theta_bins = u.Quantity([-np.inf, np.inf], u.TeV)
+    #theta_bins = add_overflow_bins(
+    #    create_bins_per_decade(emin, emax, bins_per_decade=25,)
+    #)
     # gammapy doesnt like 0 or inf energies
     theta_bins[-1] = 100 * u.TeV
     theta_bins[0] = 1 * u.GeV
@@ -90,7 +92,7 @@ def main(gamma, proton, electron, irfoutput, obstime):
     particles = {
         "gamma": {
             "file": gamma,
-            "target_spectrum": CRAB_HEGRA,
+            "target_spectrum": CRAB_MAGIC_JHEAP2015,
         },
         "proton": {
             "file": proton,
@@ -177,6 +179,8 @@ def main(gamma, proton, electron, irfoutput, obstime):
             tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
         )
 
+    # 07.01: use global cut -> only one energy bin
+    # 18.12: Use 100% dummy cut to test influence on theta cuts and spectra! 
     # you could be smart and only use correct signs, hmmmm i like that idea
     # try to filter wrong signs -> does this break the background estimation?
     mask_theta_cuts = gammas['sign_correct']
