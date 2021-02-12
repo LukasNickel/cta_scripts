@@ -61,5 +61,23 @@ def read_to_pyirf(infile):
     return events.filled(), sim_info
 
 
+def load_dl1_sim_info(path):
+    siminfo = QTable.read(path, '/configuration/simulation/run')
+    for c in siminfo.columns:
+        if c.startswith('corsika') or c.startswith('min') or c.startswith('max') or c.startswith('energy') or c.startswith('simtel') or c.startswith('spectral'):
+            assert len(np.unique(siminfo[c])) == 1
+    return SimulatedEventsInfo(
+        n_showers = np.sum(siminfo['num_showers'] * siminfo['shower_reuse']),
+        energy_min = u.Quantity(siminfo['energy_range_min'][0], siminfo.meta['energy_range_max_UNIT'].decode()),
+        energy_max = u.Quantity(siminfo['energy_range_max'][0], siminfo.meta['energy_range_min_UNIT'].decode()),
+        max_impact = u.Quantity(siminfo['max_scatter_range'][0], siminfo.meta['max_scatter_range_UNIT'].decode()),
+        spectral_index = siminfo['spectral_index'][0],
+        viewcone = u.Quantity(siminfo['max_viewcone_radius'][0], siminfo.meta['max_viewcone_radius_UNIT'].decode()),
+    )
 
 
+def load_dl2_events(path):
+    ## load aict generated tables
+    events = None
+
+    return events
