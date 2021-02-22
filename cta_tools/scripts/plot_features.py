@@ -40,21 +40,15 @@ else:
     help='reweight to spectrum. 0: do nothing, 1: crab, 2: Proton CR'
 )
 @click.option('--feature_name', '-f', multiple=True, type=str)
+@click.option('--cut_columns', '-c', multiple=True, type=str)
 @click.option('--output', '-o', type=click.Path(exists=False, dir_okay=False))
-@click.option('--selection', '-s', default=False, is_flag=True)
-@click.option('--gh_cuts', '-g', default=False, is_flag=True)
-@click.option('--theta_cuts', '-t', default=False, is_flag=True)
-@click.option('--t_obs', '-h', default=50)
 def main(
         name,
         pattern,
         feature_name,
+        cut_columns,
         output,
         weight,
-        selection,
-        gh_cuts,
-        theta_cuts,
-        t_obs
 ):
     observations = []
     assert len(name) == len(pattern)
@@ -63,47 +57,54 @@ def main(
         data_tables = []
         weights = []
         cols = list(feature_name)
+        obstime = 0
         if w != 0:
             cols.append('gamma_energy_prediction')
+        else:
+            cols.append('dragon_time')
         for f in tqdm(files):
             data = read_table(f, columns=cols)
-            if w == 1:
-                sim_info = read_sim_info(f)
-                weights = calculate_event_weights(
-                    u.Quantity(data['gamma_energy_prediction'], u.TeV, copy=False),
-                    PowerLaw.from_simulation(sim_info, t_obs*u.h),
-                    CRAB_MAGIC_JHEAP2015,
-                )
-                data['weights'] = weights
-            elif w == 2:
-                sim_info = read_sim_info(f)
-                weights = calculate_event_weights(
-                    u.Quantity(data['gamma_energy_prediction'], u.TeV, copy=False),
-                    PowerLaw.from_simulation(sim_info, t_obs*u.h),
-                    IRFDOC_PROTON_SPECTRUM,
-                )
-                data['weights'] = weights
-            else:
-                data['weights'] = 1
-
-            if theta_cuts or gh_cuts:
+            if cut_columns:
                 cuts = read_data(f, 'cuts')
-                if theta_cuts:
-                    data = data[cuts['passed_theta']]
-                if gh_cuts:
-                    data = data[cuts['passed_gh']]
+                mask = np.ones(len(data), dtype=bool)
+                for c in cut_columns:
+                    mask &= cuts[f'passed_{c}'].values
+                data = data[mask]
             data_tables.append(data)
+            if w == 0:
+                obstime += (data['dragon_time'].max() - data['dragon_time'].min())
+        combined = vstack(data_tables)
+        # calculate weights for event rate
+        if w == 1:
+            sim_info = read_sim_info(f)
+            combined['weights'] = calculate_event_weights(
+                u.Quantity(combined['gamma_energy_prediction'], u.TeV, copy=False),
+                CRAB_MAGIC_JHEAP2015,
+                PowerLaw.from_simulation(sim_info, 1*u.s),
+            )
+        elif w == 2:
+            sim_info = read_sim_info(f)
+            combined['weights'] = calculate_event_weights(
+                u.Quantity(combined['gamma_energy_prediction'], u.TeV, copy=False),
+                IRFDOC_PROTON_SPECTRUM,
+                PowerLaw.from_simulation(sim_info, 1*u.s),
+            )
+        elif w == 0:
+            combined['weights'] = np.ones(len(combined)) / obstime
+        else:
+            raise Exception('Not implemented')
 
         observations.append((
             n,
             w,
-            vstack(data_tables)
+            combined
         ))
 
     figures = []
     for feature in feature_name:
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
+        nbins = 50
         # set bins?
         for i, (name, weight, data) in enumerate(observations):
             # hack for nans
@@ -115,18 +116,15 @@ def main(
                 bins = np.linspace(
                     np.nanpercentile(values, 1),
                     np.nanpercentile(values, 99),
-                    50,
+                    nbins,
                 )
-                if 'energy' in feature:
+                if any([x in feature for x in ['energy', 'intensity']]):
                     bins = np.logspace(
                         np.log10(values.min()),
                         np.log10(values.max()),
-                        50,
+                        nbins,
                     )
                     ax.set_xscale('log')
-
-            if (data['weights'] != 1).any():
-                name += f' (reweighted to {t_obs}h)'
             ax.hist(
                 values,
                 histtype='step',
@@ -138,6 +136,7 @@ def main(
         ax.legend()
         title = feature
         ax.set_title(title)
+        ax.set_ylabel('Event Rate / s')
         ax.set_yscale('log')
 
     if output is None:

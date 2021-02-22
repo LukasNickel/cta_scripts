@@ -1,4 +1,5 @@
 import numpy as np
+import h5py
 import pandas as pd
 from aict_tools.io import read_data
 from astropy.table import QTable
@@ -87,10 +88,21 @@ def read_table(path, columns=None, key='events'):
     """
     try:
         df = read_data(path, key=key, columns=columns,)
-        return QTable.from_pandas(df)
+        table = QTable.from_pandas(df)
+        if 'gamma_energy_prediction' in table.keys():
+            table['gamma_energy_prediction'].unit = u.TeV
+        return table
     except:
         t = QTable.read(path, 'EVENTS')
         if columns:
             return t[columns]
         else:
             return t
+
+
+def read_cuts(path):
+    if path.suffix == '.h5':
+        with h5py.File(path, 'r') as file_:
+            if 'cuts' in file_.keys():
+                return read_data(path, 'cuts')
+    return None

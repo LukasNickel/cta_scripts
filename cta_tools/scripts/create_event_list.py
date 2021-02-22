@@ -86,45 +86,12 @@ def main(pattern, cut_file, output, theta):
         nevents = len(df)
         print("\nEvents in run: ", nevents)
         df['selected'] = True
-        #df['selected'] = (df['gammaness'] > 0.6)
-#        gh_mask = evaluate_binned_cut(
-#            df['gammaness'],
-#            u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-#            gh_cuts,
-#            operator.ge
-#        )
-#        df['selected'] &= gh_mask
-        #df = df[df['selected']]
         df['selected'] = df_selection['passed_gh'].values
         ngh = np.count_nonzero(df['selected'])
         print('Events nach g/h cut: ', ngh, ngh/nevents*100, "%")
+        #from IPython import embed; embed()
 
-        #pred = wobble_predictions_lst(df)
-        #df['ra_pred'], df['dec_pred'] = pred[0], pred[1]
-        #df['theta_on'], theta_offs = pred[2], pred[3]
-        #thetas = np.array(theta_offs + [pred[2]])
-        #df['ra_pnt'], df['dec_pnt'] = pred[4], pred[5]
-
-        # theta cuts always on min distance
-        # assuming cuts are smaller than off size distance
-        thetas = np.array([df[x] for x in df.columns if x.startswith('theta')])
-        #theta_mask = (thetas.min(axis=0) < df['cut_theta'])
-        #theta_mask = evaluate_binned_cut(
-        #    u.Quantity(thetas.min(axis=0), u.deg, copy=False),
-        #    u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-        #    theta_cuts,
-        #    operator.le
-        #)
-        #ebins = np.append(theta_cuts["low"], theta_cuts["high"][-1])
-        #bin_index = calculate_bin_indices(
-        #    u.Quantity(
-        #        df['gamma_energy_prediction'].values,
-        #        u.TeV,
-        #        copy=False),
-        #    ebins
-        #)
-        #df['theta_cut_value'] = theta_cuts["cut"][bin_index]
-        #df['theta_cut_value'] = theta_cuts["cut"][bin_index]
+        #thetas = np.array([df[x] for x in df.columns if x.startswith('THETA_OFF')])
         event_columns = {
             'ra_pred': 'RA',
             'dec_pred': 'DEC',
@@ -132,13 +99,16 @@ def main(pattern, cut_file, output, theta):
             'dragon_time': 'TIME',
             'gamma_energy_prediction': 'ENERGY',
         }
-        for i, thetas in enumerate(thetas[1:]):
-            df[f'theta_off{i}'] = thetas
-            event_columns[f'theta_off{i}'] = f'THETA_OFF{i}'
+        for x in df.columns:
+            if x.startswith('THETA'):
+                event_columns[x] = x
+        #from IPython import embed; embed()
+        #df[f'THETA_ON'] = thetas
+        #for i, thetas in enumerate(thetas[1:]):
+        #    df[f'theta_off{i}'] = thetas
+        #    event_columns[f'theta_off{i}'] = f'THETA_OFF{i}'
 
         if theta:
-            #df = df[theta_mask]
-            #df = df[df_selection['passed_theta'].values]
             df['selected'] &= df_selection['passed_theta'].values
             ntheta = np.count_nonzero(df['selected'])
             print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")

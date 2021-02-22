@@ -10,8 +10,8 @@ import click
 import astropy.units as u
 from aict_tools.io import append_column_to_hdf5, remove_column_from_file
 from tqdm import tqdm
-from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
-erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
+from aict_tools.apply import create_mask_h5py
+
 
 
 # from aict tools. find a different place for these
@@ -37,16 +37,18 @@ text2symbol = {
 
 @click.command()
 @click.argument('pattern')
-@click.argument('cut_file')
 @click.argument('log_file')
 @click.option('--recalculate/--no-recalculate', default=False)
-def main(pattern, cut_file, log_file, recalculate,):
+@click.option('--config', '-c', type=str)
+def main(pattern, cut_file, log_file, recalculate, config):
     files = Path(pattern).parent.glob(pattern.split('/')[-1])
-    gh_cuts = QTable.read(cut_file, hdu="GH_CUTS")
-    theta_cuts = QTable.read(cut_file, hdu="THETA_CUTS_OPT")
+    with open(configuration_path) as f:
+        config = yaml.load(f)
+
 
     for f in tqdm(files):
         print('Evaluating cuts on file', f)
+        
         with h5py.File(f, 'r+') as file_:
             if 'cuts' in file_.keys():
                 if not recalculate:
@@ -57,7 +59,7 @@ def main(pattern, cut_file, log_file, recalculate,):
                     del file_['cuts']
         df = read_data(f, 'events')
 
-        if ('THETA_ON' not in df.columns) or (recalculate is True):
+        if ('theta_on' not in df.columns) or (recalculate is True):
             theta_cols = [c for c in df.columns if c.startswith('theta')]
             ra_cols = [c for c in df.columns if c.startswith('ra')]
             dec_cols = [c for c in df.columns if c.startswith('dec')]
@@ -76,13 +78,13 @@ def main(pattern, cut_file, log_file, recalculate,):
 
             theta_on, theta_offs = pred[2], pred[3]
             assert len(theta_on) == len(df)
-            append_column_to_hdf5(f, theta_on, 'events', 'THETA_ON')
+            append_column_to_hdf5(f, theta_on, 'events', 'theta_on')
 
             for i, theta_off in enumerate(theta_offs):
-                append_column_to_hdf5(f, theta_off, 'events', f'THETA_OFF{i}')
+                append_column_to_hdf5(f, theta_off, 'events', f'theta_off{i}')
         else:
-            theta_on = df['THETA_ON'].values
-            theta_offs = [df[c] for c in df.columns if c.startswith('THETA_OFF')]
+            theta_on = df['theta_on'].values
+            theta_offs = [df[c] for c in df.columns if c.startswith('theta_off')]
 
         # actually evaluate cuts
         thetas = np.array(theta_offs + [theta_on])
@@ -105,6 +107,10 @@ def main(pattern, cut_file, log_file, recalculate,):
         assert len(gh_mask) == len(df)
         append_column_to_hdf5(f, gh_mask, 'cuts', 'passed_gh')
 
+        if cut_feature:
+            for feature, val, op in zip(cut_feature, value, operatorid):
+                mask = OPERATORS[op](df[feature], val)
+                append_column_to_hdf5(f, mask, 'cuts', f'passed_{feature}')
 
     with open(log_file, 'a+') as f:
         f.write('done')
