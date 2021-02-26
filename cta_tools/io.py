@@ -2,12 +2,15 @@ import numpy as np
 import h5py
 import pandas as pd
 from aict_tools.io import read_data
-from astropy.table import QTable
+from astropy.table import QTable, join
 import astropy.units as u
-from cta_tools.coords.cam_to_altaz import transform_predictions
 from cta_tools.utils import ffill, remove_nans, add_units, rename_columns
+from cta_tools.coords.transform import get_altaz_prediction
 from astropy.table.column import Column, MaskedColumn
 from pyirf.simulations import SimulatedEventsInfo
+from ctapipe.instrument.subarray import SubarrayDescription
+
+from astropy.time import Time
 import logging
 
 
@@ -15,20 +18,10 @@ import logging
 def read_to_pyirf(path):
 
     events = read_mc_dl2(path)
-    dist_cog = dist_pred = np.sqrt(
-        (df["x"] - df["src_x"]) ** 2 + (df["y"] - df["src_y"]) ** 2
-    )
-    dist_pred = dist_pred = np.sqrt(
-        (df["source_x_prediction"] - df["src_x"]) ** 2
-        + (df["source_y_prediction"] - df["src_y"]) ** 2
-    )
-    df["sign_correct"] = dist_pred < dist_cog
+    altaz_pred = get_altaz_prediction(events)
+    events["reco_alt"], events["reco_az"] = altaz_pred.alt, altaz_pred.az
 
-    events.columns["reco_alt"], events.columns["reco_az"] = transform_predictions(
-        events
-    )
-
-    sim_info = read_sim_info(infile)
+    sim_info = read_sim_info(path)
     return events, sim_info
 
 
@@ -72,7 +65,7 @@ def read_lst_dl2(path, drop_nans=True, rename=True):
     events["gamma_energy_prediction"].unit = u.TeV
     events["time"] = Time(events[time_key], format="mjd", scale="tai")
 
-    subarray = SubarrayDescription.from_hdf(f)
+    subarray = SubarrayDescription.from_hdf(path)
     events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
 
     if drop_nans:

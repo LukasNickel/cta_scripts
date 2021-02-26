@@ -43,9 +43,18 @@ from pyirf.io import (
 )
 
 from cta_tools.io import read_to_pyirf
-
-
 log = logging.getLogger("pyirf")
+
+
+
+def get_global_cut_table(cut_value):
+    bins = u.Quantity([1, 1e6], u.GeV)
+    cut_table = QTable()
+    cut_table["low"] = bins[:-1]
+    cut_table["high"] = bins[1:]
+    cut_table["center"] = bin_center(bins)
+    cut_table["cut"] = cut_value
+    return cut_table
 
 
 @click.command()
@@ -67,15 +76,17 @@ def main(gamma, proton, electron, irfoutput, obstime):
     MAX_GH_CUT_EFFICIENCY = 0.8
     GH_CUT_EFFICIENCY_STEP = 0.01
 
+    # gh cut used for first calculation of the binned theta cuts
+    INITIAL_GH_CUT_EFFICENCY = 0.4
+
     emin = 5 * u.GeV
     emax = 50 * u.TeV
 
     # event display uses much finer bins for the theta cut than
     # for the sensitivity
-    theta_bins = u.Quantity([-np.inf, np.inf], u.TeV)
-    # theta_bins = add_overflow_bins(
-    #    create_bins_per_decade(emin, emax, bins_per_decade=25,)
-    # )
+    theta_bins = add_overflow_bins(
+        create_bins_per_decade(emin, emax, bins_per_decade=25,)
+    )
     # gammapy doesnt like 0 or inf energies
     theta_bins[-1] = 100 * u.TeV
     theta_bins[0] = 1 * u.GeV
@@ -132,15 +143,20 @@ def main(gamma, proton, electron, irfoutput, obstime):
         [particles["proton"]["events"], particles["electron"]["events"]]
     )
 
-    # this is a dummy to create the table necessary for the gh optimisation
+    INITIAL_GH_CUT = np.quantile(gammas['gh_score'], (1 - INITIAL_GH_CUT_EFFICENCY))
+    log.info(f"Using fixed G/H cut of {INITIAL_GH_CUT} to calculate theta cuts")
+
+    mask_theta_cuts = gammas["gh_score"] >= INITIAL_GH_CUT
+
+
     theta_cuts = calculate_percentile_cut(
-        gammas["theta"],
-        gammas["reco_energy"],
+        gammas["theta"][mask_theta_cuts],
+        gammas["reco_energy"][mask_theta_cuts],
         bins=theta_bins,
         min_value=0.05 * u.deg,
         fill_value=0.5 * u.deg,
         max_value=0.5 * u.deg,
-        percentile=100,  # heres the dummy
+        percentile=50,
     )
 
     log.info("Optimizing G/H separation cut for best sensitivity")
@@ -165,14 +181,9 @@ def main(gamma, proton, electron, irfoutput, obstime):
             tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
         )
 
-    # 07.01: use global cut -> only one energy bin
-    # 18.12: Use 100% dummy cut to test influence on theta cuts and spectra!
-    # you could be smart and only use correct signs, hmmmm i like that idea
-    # try to filter wrong signs -> does this break the background estimation?
-    mask_theta_cuts = gammas["sign_correct"]
     theta_cuts_opt = calculate_percentile_cut(
-        gammas[gammas["selected_gh"] & mask_theta_cuts]["theta"],
-        gammas[gammas["selected_gh"] & mask_theta_cuts]["reco_energy"],
+        gammas[gammas["selected_gh"]]["theta"],
+        gammas[gammas["selected_gh"]]["reco_energy"],
         theta_bins,
         percentile=68,
         fill_value=0.32 * u.deg,
