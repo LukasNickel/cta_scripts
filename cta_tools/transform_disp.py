@@ -9,22 +9,22 @@ import warnings
 
 from astropy.coordinates import SkyCoord, AltAz
 from ctapipe.coordinates import (
-        NominalFrame,
-        CameraFrame,
-        TiltedGroundFrame,
-        project_to_ground,
-        GroundFrame,
-        MissingFrameAttributeWarning
+    NominalFrame,
+    CameraFrame,
+    TiltedGroundFrame,
+    project_to_ground,
+    GroundFrame,
+    MissingFrameAttributeWarning,
 )
 
 
 def camera_to_horizontal(x, y, alt_pointing, az_pointing, focal_length):
-    ''' Everything should be quantities!
-    Only for MC right now, as the frame is fixed in time 
-    '''
+    """Everything should be quantities!
+    Only for MC right now, as the frame is fixed in time
+    """
 
     with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=MissingFrameAttributeWarning)
+        warnings.filterwarnings("ignore", category=MissingFrameAttributeWarning)
         altaz = AltAz()
 
         tel_pointing = SkyCoord(
@@ -34,10 +34,9 @@ def camera_to_horizontal(x, y, alt_pointing, az_pointing, focal_length):
         )
 
         frame = CameraFrame(
-            focal_length = focal_length,
+            focal_length=focal_length,
             telescope_pointing=tel_pointing,
         )
-
 
         cam_coords = SkyCoord(
             x=x,
@@ -47,5 +46,5 @@ def camera_to_horizontal(x, y, alt_pointing, az_pointing, focal_length):
 
         source_altaz = cam_coords.transform_to(altaz)
 
-        # rad verwenden? 
+        # rad verwenden?
         return source_altaz.alt.to_value(u.deg), source_altaz.az.to_value(u.deg)

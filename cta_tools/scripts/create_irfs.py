@@ -49,11 +49,11 @@ log = logging.getLogger("pyirf")
 
 
 @click.command()
-@click.option('-g', '--gamma', type=click.Path(exists=True, dir_okay=False))
-@click.option('-p', '--proton', type=click.Path(exists=True, dir_okay=False))
-@click.option('-e', '--electron', type=click.Path(exists=True, dir_okay=False))
-@click.option('-o', '--irfoutput', type=click.Path())
-@click.option('-t', '--obstime', type=int)
+@click.option("-g", "--gamma", type=click.Path(exists=True, dir_okay=False))
+@click.option("-p", "--proton", type=click.Path(exists=True, dir_okay=False))
+@click.option("-e", "--electron", type=click.Path(exists=True, dir_okay=False))
+@click.option("-o", "--irfoutput", type=click.Path())
+@click.option("-t", "--obstime", type=int)
 def main(gamma, proton, electron, irfoutput, obstime):
     T_OBS = obstime * u.hour
 
@@ -73,21 +73,18 @@ def main(gamma, proton, electron, irfoutput, obstime):
     # event display uses much finer bins for the theta cut than
     # for the sensitivity
     theta_bins = u.Quantity([-np.inf, np.inf], u.TeV)
-    #theta_bins = add_overflow_bins(
+    # theta_bins = add_overflow_bins(
     #    create_bins_per_decade(emin, emax, bins_per_decade=25,)
-    #)
+    # )
     # gammapy doesnt like 0 or inf energies
     theta_bins[-1] = 100 * u.TeV
     theta_bins[0] = 1 * u.GeV
 
     sensitivity_bins = add_overflow_bins(
-        create_bins_per_decade(
-            emin, emax, bins_per_decade=5
-        )
+        create_bins_per_decade(emin, emax, bins_per_decade=5)
     )
     sensitivity_bins[-1] = 100 * u.TeV
     sensitivity_bins[0] = 1 * u.GeV
-
 
     particles = {
         "gamma": {
@@ -112,21 +109,13 @@ def main(gamma, proton, electron, irfoutput, obstime):
         p["events"], p["simulation_info"] = read_to_pyirf(p["file"])
         p["events"]["particle_type"] = particle_type
 
-        p["simulated_spectrum"] = PowerLaw.from_simulation(
-            p["simulation_info"],
-            T_OBS
-        )
+        p["simulated_spectrum"] = PowerLaw.from_simulation(p["simulation_info"], T_OBS)
         p["events"]["weight"] = calculate_event_weights(
-            p["events"]["true_energy"],
-            p["target_spectrum"],
-            p["simulated_spectrum"]
+            p["events"]["true_energy"], p["target_spectrum"], p["simulated_spectrum"]
         )
-        for prefix in ('true', 'reco'):
+        for prefix in ("true", "reco"):
             k = f"{prefix}_source_fov_offset"
-            p["events"][k] = calculate_source_fov_offset(
-                p["events"],
-                prefix=prefix
-            )
+            p["events"][k] = calculate_source_fov_offset(p["events"], prefix=prefix)
 
         p["events"]["theta"] = calculate_theta(
             p["events"],
@@ -139,11 +128,9 @@ def main(gamma, proton, electron, irfoutput, obstime):
     gammas = particles["gamma"]["events"]
 
     # background table composed of both electrons and protons
-    background = table.vstack([
-        particles["proton"]["events"],
-        particles["electron"]["events"]
-    ])
-
+    background = table.vstack(
+        [particles["proton"]["events"], particles["electron"]["events"]]
+    )
 
     # this is a dummy to create the table necessary for the gh optimisation
     theta_cuts = calculate_percentile_cut(
@@ -156,12 +143,11 @@ def main(gamma, proton, electron, irfoutput, obstime):
         percentile=100,  # heres the dummy
     )
 
-
     log.info("Optimizing G/H separation cut for best sensitivity")
     gh_cut_efficiencies = np.arange(
         GH_CUT_EFFICIENCY_STEP,
         MAX_GH_CUT_EFFICIENCY + GH_CUT_EFFICIENCY_STEP / 2,
-        GH_CUT_EFFICIENCY_STEP
+        GH_CUT_EFFICIENCY_STEP,
     )
     sensitivity_step_2, gh_cuts = optimize_gh_cut(
         gammas,
@@ -180,13 +166,13 @@ def main(gamma, proton, electron, irfoutput, obstime):
         )
 
     # 07.01: use global cut -> only one energy bin
-    # 18.12: Use 100% dummy cut to test influence on theta cuts and spectra! 
+    # 18.12: Use 100% dummy cut to test influence on theta cuts and spectra!
     # you could be smart and only use correct signs, hmmmm i like that idea
     # try to filter wrong signs -> does this break the background estimation?
-    mask_theta_cuts = gammas['sign_correct']
+    mask_theta_cuts = gammas["sign_correct"]
     theta_cuts_opt = calculate_percentile_cut(
-        gammas[gammas['selected_gh'] & mask_theta_cuts]["theta"],
-        gammas[gammas['selected_gh'] & mask_theta_cuts]["reco_energy"],
+        gammas[gammas["selected_gh"] & mask_theta_cuts]["theta"],
+        gammas[gammas["selected_gh"] & mask_theta_cuts]["reco_energy"],
         theta_bins,
         percentile=68,
         fill_value=0.32 * u.deg,
@@ -210,18 +196,16 @@ def main(gamma, proton, electron, irfoutput, obstime):
         alpha=ALPHA,
         background_radius=MAX_BG_RADIUS,
     )
-    sensitivity = calculate_sensitivity(
-        signal_hist, background_hist, alpha=ALPHA
-    )
+    sensitivity = calculate_sensitivity(signal_hist, background_hist, alpha=ALPHA)
 
     # scale relative sensitivity by Crab flux to get the flux sensitivity
-    spectrum = particles['gamma']['target_spectrum']
+    spectrum = particles["gamma"]["target_spectrum"]
     for s in (sensitivity_step_2, sensitivity):
-        s["flux_sensitivity"] = (
-            s["relative_sensitivity"] * spectrum(s['reco_energy_center'])
+        s["flux_sensitivity"] = s["relative_sensitivity"] * spectrum(
+            s["reco_energy_center"]
         )
 
-    log.info('Calculating IRFs')
+    log.info("Calculating IRFs")
     hdus = [
         fits.PrimaryHDU(),
         fits.BinTableHDU(sensitivity, name="SENSITIVITY"),
@@ -239,15 +223,11 @@ def main(gamma, proton, electron, irfoutput, obstime):
     }
 
     # binnings for the irfs
-    true_energy_bins = add_overflow_bins(
-        create_bins_per_decade(emin, emax, 10)
-    )
+    true_energy_bins = add_overflow_bins(create_bins_per_decade(emin, emax, 10))
     true_energy_bins[-1] = 100 * u.TeV
     true_energy_bins[0] = 1 * u.GeV
 
-    reco_energy_bins = add_overflow_bins(
-        create_bins_per_decade(emin, emax, 5)
-    )
+    reco_energy_bins = add_overflow_bins(create_bins_per_decade(emin, emax, 5))
     reco_energy_bins[-1] = 100 * u.TeV
     reco_energy_bins[0] = 1 * u.GeV
 
@@ -268,7 +248,7 @@ def main(gamma, proton, electron, irfoutput, obstime):
                 true_energy_bins,
                 fov_offset_bins,
                 extname="EFFECTIVE_AREA" + label,
-                TELESCOP='LST',  # gammapy????
+                TELESCOP="LST",  # gammapy????
             )
         )
         edisp = energy_dispersion(
@@ -288,7 +268,8 @@ def main(gamma, proton, electron, irfoutput, obstime):
         )
 
     bias_resolution = energy_bias_resolution(
-        gammas[gammas["selected"]], true_energy_bins,
+        gammas[gammas["selected"]],
+        true_energy_bins,
     )
     ang_res = angular_resolution(
         gammas[gammas["selected_gh"]],
@@ -302,34 +283,36 @@ def main(gamma, proton, electron, irfoutput, obstime):
     )
 
     background_rate = background_2d(
-        background[background['selected_gh']],
+        background[background["selected_gh"]],
         reco_energy_bins,
         fov_offset_bins=np.arange(0, 11) * u.deg,
         t_obs=T_OBS,
     )
 
-    hdus.append(create_background_2d_hdu(
-        background_rate,
-        reco_energy_bins,
-        fov_offset_bins=np.arange(0, 11) * u.deg,
-    ))
-    hdus.append(create_psf_table_hdu(
-        psf, true_energy_bins, source_offset_bins, fov_offset_bins,
-    ))
-    hdus.append(create_rad_max_hdu(
-        theta_cuts_opt["cut"][:, np.newaxis],
-        theta_bins, fov_offset_bins
-    ))
-    hdus.append(fits.BinTableHDU(
-        ang_res,
-        name="ANGULAR_RESOLUTION")
-                )
-    hdus.append(fits.BinTableHDU(
-        bias_resolution,
-        name="ENERGY_BIAS_RESOLUTION"
-    ))
+    hdus.append(
+        create_background_2d_hdu(
+            background_rate,
+            reco_energy_bins,
+            fov_offset_bins=np.arange(0, 11) * u.deg,
+        )
+    )
+    hdus.append(
+        create_psf_table_hdu(
+            psf,
+            true_energy_bins,
+            source_offset_bins,
+            fov_offset_bins,
+        )
+    )
+    hdus.append(
+        create_rad_max_hdu(
+            theta_cuts_opt["cut"][:, np.newaxis], theta_bins, fov_offset_bins
+        )
+    )
+    hdus.append(fits.BinTableHDU(ang_res, name="ANGULAR_RESOLUTION"))
+    hdus.append(fits.BinTableHDU(bias_resolution, name="ENERGY_BIAS_RESOLUTION"))
 
-    log.info('Writing outputfile')
+    log.info("Writing outputfile")
     fits.HDUList(hdus).writeto(irfoutput, overwrite=True)
 
 
