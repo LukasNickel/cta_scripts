@@ -36,6 +36,77 @@ def read_mc_dl2(path, drop_nans=True, rename=True):
     return table
 
 
+def read_mc_dl1(path, drop_nans=True, rename=True):
+    # dont rename yet to join tables together
+    events = QTable.read(path, f"/simulation/event/telescope/parameters/tel_001")
+    pointing = QTable.read(path, f"/dl1/monitoring/telescope/pointing/tel_001")
+    trigger = QTable.read(path, f"/dl1/event/telescope/trigger")
+    # there are no magic numbers here. move on
+    events["tel_id"] = 1
+    events = join(
+        events, trigger, keys=["obs_id", "event_id", "tel_id"], join_type="left"
+    )
+    time_key = "time" if "time" in trigger.keys() else "telescopetrigger_time"
+    events = join(events, pointing, keys=time_key, join_type="left")
+    # masked columns make everything harder
+    events = events.filled(np.nan)
+    events["azimuth"] = ffill(events["azimuth"])
+    events["altitude"] = ffill(events["altitude"])
+    events = add_units(events)
+
+    # this is failing because of broken header info for some reason
+    #subarray = SubarrayDescription.from_hdf(path)
+    #events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    events["focal_length"] = 28*u.m
+
+    if drop_nans:
+        events = remove_nans(events)
+    if rename:
+        return rename_columns(events)
+
+
+    mc = QTable.read(path, "/simulation/event/subarray/shower")
+    mc = add_units(mc)
+    table = join(events, mc, join_type="left", keys=["obs_id", "event_id"])
+    if rename:
+        return rename_columns(table)
+    return table
+
+
+
+def read_lst_dl1(path, drop_nans=True, rename=True):
+    """
+    lst1 only right now. could loop over tels or smth
+    """
+    events = QTable.read(path, f"/dl1/event/telescope/parameters/tel_001")
+    pointing = QTable.read(path, f"/dl1/monitoring/telescope/pointing/tel_001")
+    trigger = QTable.read(path, f"/dl1/event/telescope/trigger")
+    # there are no magic numbers here. move on
+    events["tel_id"] = 1
+    events = join(
+        events, trigger, keys=["obs_id", "event_id", "tel_id"], join_type="left"
+    )
+    time_key = "time" if "time" in trigger.keys() else "telescopetrigger_time"
+    events = join(events, pointing, keys=time_key, join_type="left")
+    # masked columns make everything harder
+    events = events.filled(np.nan)
+    events["azimuth"] = ffill(events["azimuth"])
+    events["altitude"] = ffill(events["altitude"])
+    events = add_units(events)
+
+    # this is failing because of broken header info for some reason
+    #subarray = SubarrayDescription.from_hdf(path)
+    #events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    events["focal_length"] = 28*u.m
+
+    if drop_nans:
+        events = remove_nans(events)
+    if rename:
+        return rename_columns(events)
+    return events
+
+
+
 def read_lst_dl2(path, drop_nans=True, rename=True):
     """
     lst1 only right now. could loop over tels or smth
@@ -65,8 +136,10 @@ def read_lst_dl2(path, drop_nans=True, rename=True):
     events["gamma_energy_prediction"].unit = u.TeV
     events["time"] = Time(events[time_key], format="mjd", scale="tai")
 
-    subarray = SubarrayDescription.from_hdf(path)
-    events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    # this is failing because of broken header info for some reason
+    #subarray = SubarrayDescription.from_hdf(path)
+    #events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    events["focal_length"] = 28*u.m
 
     if drop_nans:
         events = remove_nans(events)
