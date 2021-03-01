@@ -23,9 +23,10 @@ from cta_tools.coords.transform import (
 
 
 location = EarthLocation.from_geodetic(-17.89139 * u.deg, 28.76139 * u.deg, 2184 * u.m)
+crab_nebula = SkyCoord(ra=83.63308333*u.deg, dec=22.0145*u.deg, frame='icrs')
 
 
-def calc_theta(data, source=SkyCoord.from_name("CRAB_NEBULA")):
+def calc_theta(data, source=crab_nebula):
     altaz = AltAz(location=location, obstime=data["time"])
     return get_icrs_prediction(data).separation(source).to_value(u.deg)
 
@@ -40,7 +41,7 @@ def calc_mc_theta(data):
     return calc_theta(data, source)
 
 
-def calc_wobble_thetas(data, source=SkyCoord.from_name("CRAB_NEBULA"), n_off=5):
+def calc_wobble_thetas(data, source=crab_nebula, n_off=5):
     altaz = AltAz(location=location, obstime=data["time"])
     pointing = SkyCoord(
         alt=data["pointing_alt"],
@@ -71,5 +72,5 @@ def calc_wobble_thetas(data, source=SkyCoord.from_name("CRAB_NEBULA"), n_off=5):
             y=r * np.sin(new_phi),
             frame=camera_frame,
         ).transform_to("icrs")
-        theta_offs.append(off_pos.separation(icrs_pred).to_value(u.deg))
+        theta_offs.append(off_pos.separation(icrs_preds).to_value(u.deg))
     return theta_on, theta_offs
