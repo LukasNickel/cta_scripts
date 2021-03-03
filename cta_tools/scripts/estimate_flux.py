@@ -8,7 +8,7 @@ from gammapy.modeling.models import create_crab_spectral_model
 @click.command()
 @click.argument("config_path", type=click.Path(exists=True, dir_okay=False))
 @click.argument("models_path", type=click.Path(exists=True, dir_okay=False))
-@click.option("-o", "--output", type=click.Path(exists=True, file_okay=False))
+@click.option("-o", "--output", type=click.Path(dir_okay=False))
 @click.option("-r", "--reference", type=str, help="Crab Reference Spectrum. Crab Only!")
 def main(config_path, models_path, output, reference):
     config = AnalysisConfig.read(config_path)
@@ -37,13 +37,11 @@ def main(config_path, models_path, output, reference):
         )
         ax_sed.legend()
     if output:
-        out = Path(output)
-        plt.savefig(out / f"{config.flux_points.source}_flux_points.pdf")
-        analysis.models.write(
-            out / f"{config.flux_points.source}_model.yaml", overwrite=True
-        )
+        base_out = Path(output)
+        plt.savefig(base_out.with_suffix(".pdf").as_posix())
+        analysis.models.write(base_out.with_suffix(".yaml").as_posix(), overwrite=True)
         analysis.flux_points.write(
-            out / f"{config.flux_points.source}_flux.fits", overwrite=True
+            base_out.with_suffix(".fits").as_posix(), overwrite=True
         )
 
     else:

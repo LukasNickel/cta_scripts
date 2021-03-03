@@ -26,7 +26,7 @@ def main(infile, output):
 
     figures = []
 
-    sens = QTable.read(infile, hdu="SENSITIVITY_STEP_2")
+    sens = QTable.read(infile, hdu="SENSITIVITY")
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
     plot_sensitivity(sens[1:-1], ax)
@@ -57,10 +57,10 @@ def main(infile, output):
     ax = figures[-1].add_subplot(1, 1, 1)
     plot_background(bkg, rad_max, ax)
 
-    # thetacuts = QTable.read(infile, hdu='ANGULAR_RESOLUTION')
+    thetacuts = QTable.read(infile, hdu="THETA_CUTS")
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
-    plot_theta_cuts(rad_max, ax)
+    plot_theta_cuts(thetacuts, ax)
 
     ghcuts = QTable.read(infile, hdu="GH_CUTS")
     figures.append(plt.figure())

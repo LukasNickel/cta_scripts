@@ -15,25 +15,35 @@ from aict_tools.io import read_data, append_predictions_cta
 import pandas as pd
 import click
 import astropy.units as u
+import tables
+from astropy.time import Time, TimeDelta
 from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
 
 erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
 
 
 @click.command()
-@click.argument('path')
+@click.argument("path")
 def main(path):
-    data = read_lst_dl1(path, drop_nans=False)
-    dt = pd.DataFrame(
-        {
-            'delta_t': np.diff(data['time']).insert(0,0),
-            'obs_id': data['obs_id'],
-            'event_id': data['event_id'],
-        }
-    )
-    append_predictions_cta(f, dt, '/dl1/monitoring/telescope', 'delta_t')
+    f = tables.open_file(path)
+    if "delta_t" in f.root.dl1.monitoring.telescope:
+        return 0
+    else:
+        f.close()
+        data = read_lst_dl1(path, drop_nans=False)
+        delta_t = TimeDelta(
+            np.insert(np.diff(data["time"].mjd), 0, 0), format="jd", scale="tai"
+        )
+        print(delta_t)
+        dt = pd.DataFrame(
+            {
+                "delta_t": delta_t.to(u.s),
+                "obs_id": data["obs_id"],
+                "event_id": data["event_id"],
+            }
+        )
+        append_predictions_cta(path, dt, "/dl1/monitoring/telescope", "delta_t")
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

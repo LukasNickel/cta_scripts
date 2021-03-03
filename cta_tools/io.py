@@ -39,6 +39,9 @@ def read_mc_dl2(path, drop_nans=True, rename=True):
 def read_mc_dl1(path, drop_nans=True, rename=True):
     # dont rename yet to join tables together
     events = QTable.read(path, f"/simulation/event/telescope/parameters/tel_001")
+    mc = QTable.read(path, "/simulation/event/subarray/shower")
+    mc = add_units(mc)
+    events = join(events, mc, join_type="left", keys=["obs_id", "event_id"])
     pointing = QTable.read(path, f"/dl1/monitoring/telescope/pointing/tel_001")
     trigger = QTable.read(path, f"/dl1/event/telescope/trigger")
     # there are no magic numbers here. move on
@@ -55,15 +58,14 @@ def read_mc_dl1(path, drop_nans=True, rename=True):
     events = add_units(events)
 
     # this is failing because of broken header info for some reason
-    #subarray = SubarrayDescription.from_hdf(path)
-    #events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
-    events["focal_length"] = 28*u.m
+    # subarray = SubarrayDescription.from_hdf(path)
+    # events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    events["focal_length"] = 28 * u.m
 
     if drop_nans:
         events = remove_nans(events)
     if rename:
         return rename_columns(events)
-
 
     mc = QTable.read(path, "/simulation/event/subarray/shower")
     mc = add_units(mc)
@@ -71,7 +73,6 @@ def read_mc_dl1(path, drop_nans=True, rename=True):
     if rename:
         return rename_columns(table)
     return table
-
 
 
 def read_lst_dl1(path, drop_nans=True, rename=True):
@@ -94,17 +95,18 @@ def read_lst_dl1(path, drop_nans=True, rename=True):
     events["altitude"] = ffill(events["altitude"])
     events = add_units(events)
 
+    events["time"] = Time(events[time_key], format="mjd", scale="tai")
+
     # this is failing because of broken header info for some reason
-    #subarray = SubarrayDescription.from_hdf(path)
-    #events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
-    events["focal_length"] = 28*u.m
+    # subarray = SubarrayDescription.from_hdf(path)
+    # events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    events["focal_length"] = 28 * u.m
 
     if drop_nans:
         events = remove_nans(events)
     if rename:
         return rename_columns(events)
     return events
-
 
 
 def read_lst_dl2(path, drop_nans=True, rename=True):
@@ -137,9 +139,9 @@ def read_lst_dl2(path, drop_nans=True, rename=True):
     events["time"] = Time(events[time_key], format="mjd", scale="tai")
 
     # this is failing because of broken header info for some reason
-    #subarray = SubarrayDescription.from_hdf(path)
-    #events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
-    events["focal_length"] = 28*u.m
+    # subarray = SubarrayDescription.from_hdf(path)
+    # events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
+    events["focal_length"] = 28 * u.m
 
     if drop_nans:
         events = remove_nans(events)

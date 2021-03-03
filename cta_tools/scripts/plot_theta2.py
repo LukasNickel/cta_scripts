@@ -8,70 +8,81 @@ import click
 import numpy as np
 import astropy.units as u
 from cta_tools.plotting.theta2 import theta2
-from cta_tools.io import read_table, read_cuts
+from cta_tools.io import read_lst_dl2
+from astropy.coordinates import SkyCoord
+from cta_tools.reco.theta import calc_wobble_thetas
+
+
+def plot(data, ontime, ax):
+    on = data["theta_on"].to_value(u.deg)
+    off = []
+    noff = 0
+    for c in data.keys():
+        if c.startswith("theta_off"):
+            off.append(data[c].to_value(u.deg))
+            noff += 1
+    theta2(on, off, scaling=1 / noff, cut=1, ontime=ontime, ax=ax, bins=20)
+    return ax
 
 
 @click.command()
-@click.argument("input_pattern", type=str)
+@click.argument(
+    "input_files",
+    nargs=-1,
+)
 @click.argument("output", type=click.Path(exists=False, dir_okay=False))
-@click.option("--min_energy", type=float, default=0, help="TEV!")
-@click.option("--max_energy", type=float, default=1e100)
-def main(input_pattern, output, min_energy, max_energy):
-    print(input_pattern, input_pattern.split("/"[-1]))
-    input_files = Path(input_pattern).parent.glob(input_pattern.split("/")[-1])
-    energy_key = (
-        "ENERGY" if input_pattern.endswith("fits.gz") else "gamma_energy_prediction"
-    )
-    run_tables = []
-    live_time = 0
+@click.option("--source_ra", default=83.63308333)
+@click.option("--source_dec", default=22.0145)
+def main(
+    input_files,
+    output,
+    source_ra,
+    source_dec,
+):
+    ontime = 0
     runs = []
     for f in input_files:
         print(f)
-        t = read_table(f)
-        mask = (t[energy_key].to_value(u.TeV) > min_energy) & (
-            t[energy_key].to_value(u.TeV) < max_energy
-        )
-        cuts = read_cuts(f)
-        if cuts is not None:
-            for selection in cuts.keys():
-                if "theta" not in selection:
-                    print(selection)
-                    mask &= cuts[selection].values
-        run_tables.append(t[mask])
-        # number = re.search(r'([0-9]{5})', f.stem).group(0)
-        live_time += 0  # t.meta["LIVETIME"]
-        runs.append(0)
-        # runs.append(int(number))
+        data = read_lst_dl2(f)
+        source = SkyCoord(ra=source_ra * u.deg, dec=source_dec * u.deg, frame="icrs")
+        theta_on, off_thetas = calc_wobble_thetas(data, source=source)
+        data["theta_on"] = theta_on
+        for i, theta_off in enumerate(off_thetas):
+            data[f"theta_off_{i}"] = theta_off
+        ontime += (data["time"][-1] - data["time"][0]).to_value(u.s)
+        ontime += 0
+        runs.append(data)
 
-    runs.sort()
-    events = vstack(run_tables)
-    print(events.keys())
-    theta_on = events["THETA_ON"]
-    print("On events:", len(theta_on))
-    off_thetas = []
-    for c in [col for col in events.keys() if "THETA_OFF" in col]:
-        off = events[c]
-        print("wobble position ", c, len(off))
-        off_thetas.append(off.data)
+    events = vstack(runs)
+    figures = []
+    figures.append(plt.figure())
+    ax = figures[-1].add_subplot(1, 1, 1)
+    plot(data, ontime, ax)
+    ax.set_title("All energies")
 
-    alpha = 1 / len(off_thetas)
-    theta_off = np.concatenate(off_thetas)
+    energy_selection = [
+        (0 * u.GeV, 50 * u.GeV),
+        (50 * u.GeV, 100 * u.GeV),
+        (100 * u.GeV, 200 * u.GeV),
+        (200 * u.GeV, 500 * u.GeV),
+        (500 * u.GeV, 1000 * u.GeV),
+        (1 * u.TeV, 100 * u.TeV),
+    ]
+    for low, high in energy_selection:
+        print(low, high)
+        selection = (data["reco_energy"] > lower) & (data["reco_energy"] <= upper)
+        figures.append(plt.figure())
+        ax = figures[-1].add_subplot(1, 1, 1)
+        plot(data, ontime, ax)
+        ax.set_title(f"{lower} - {upper}")
 
-    plt.figure()
-    ax = plt.gca()
-    xmax = 0.2
-    theta2(
-        theta_on ** 2,
-        theta_off ** 2,
-        scaling=alpha,
-        cut=0.5,  # dummy
-        ontime=live_time * u.s,
-        ax=ax,
-        window=[0, xmax],
-        bins=30,
-    )
-    plt.title(f"Runs: {runs[0]} - {runs[-1]}")
-    plt.savefig(output)
+    if output is None:
+        plt.show()
+    else:
+        with PdfPages(output) as pdf:
+            for fig in figures:
+                fig.tight_layout(pad=0, h_pad=1.08, w_pad=1.08)
+                pdf.savefig(fig)
 
 
 if __name__ == "__main__":

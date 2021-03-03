@@ -131,11 +131,10 @@ def plot_background(bg_rate, rad_max, ax=None, label=None):
 
 
 def plot_theta_cuts(theta_cuts, ax=None):
-
     ax.errorbar(
-        0.5 * (theta_cuts["ENERG_LO"] + theta_cuts["ENERG_HI"]).to_value(u.TeV),
-        theta_cuts["RAD_MAX"].T[:, 0].to_value(u.deg),
-        xerr=0.5 * (theta_cuts["ENERG_LO"] - theta_cuts["ENERG_HI"]).to_value(u.TeV),
+        0.5 * (theta_cuts["low"] + theta_cuts["high"]).to_value(u.TeV),
+        theta_cuts["cut"].to_value(u.deg),
+        xerr=0.5 * (theta_cuts["low"] - theta_cuts["high"]).to_value(u.TeV),
         ls="",
     )
     ax.set_xscale("log")

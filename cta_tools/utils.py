@@ -15,26 +15,27 @@ OGADF_COLUMN_MAP = {
     "reco_energy": "ENERGY",
     "altitude": "ALT_PNT",
     "azimuth": "AZ_PNT",
-    'reco_az': 'AZ',
-    'reco_alt': 'ALT',
-    'pointing_alt': 'AZ_PNT',
-    'pointing_az': 'ALT_PNT',
-    'reco_energy': 'ENERGY',
-    'time': 'TIME',
+    "reco_az": "AZ",
+    "reco_alt": "ALT",
+    "pointing_alt": "AZ_PNT",
+    "pointing_az": "ALT_PNT",
+    "reco_energy": "ENERGY",
+    "time": "TIME",
 }
 
 
 UNITS = {
-    'true_az': u.deg,
-    'true_alt': u.deg,
-    'reco_az': u.deg,
-    'reco_alt': u.deg,
-    'pointing_alt': u.rad,
-    'pointing_az': u.rad,
-    'altitude': u.rad,
-    'azimuth': u.rad,
-    'true_energy': u.TeV,
+    "true_az": u.deg,
+    "true_alt": u.deg,
+    "reco_az": u.deg,
+    "reco_alt": u.deg,
+    "pointing_alt": u.rad,
+    "pointing_az": u.rad,
+    "altitude": u.rad,
+    "azimuth": u.rad,
+    "true_energy": u.TeV,
 }
+
 
 def ffill(arr):
     mask = np.isnan(arr)

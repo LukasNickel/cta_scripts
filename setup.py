@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cta_tools",
-    version=0.2,
+    version=0.3,
     author="Lukas Nickel",
     packages=find_packages(),
     entry_points={
@@ -17,6 +17,7 @@ setup(
             "create_event_list = cta_tools.scripts.create_event_list:main",
             "evaluate_cuts = cta_tools.scripts.evaluate_cuts:main",
             "estimate_flux = cta_tools.scripts.estimate_flux:main",
+            "add_delta_t = cta_tools.scripts.add_delta_t:main",
         ]
     },
 )

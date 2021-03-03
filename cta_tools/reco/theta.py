@@ -23,7 +23,7 @@ from cta_tools.coords.transform import (
 
 
 location = EarthLocation.from_geodetic(-17.89139 * u.deg, 28.76139 * u.deg, 2184 * u.m)
-crab_nebula = SkyCoord(ra=83.63308333*u.deg, dec=22.0145*u.deg, frame='icrs')
+crab_nebula = SkyCoord(ra=83.63308333 * u.deg, dec=22.0145 * u.deg, frame="icrs")
 
 
 def calc_theta(data, source=crab_nebula):
