@@ -153,9 +153,9 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
             gammas["reco_energy"][mask_theta_cuts],
             bins=theta_bins,
             min_value=0.05 * u.deg,
-            fill_value=0.5 * u.deg,
-            max_value=0.5 * u.deg,
-            percentile=50,
+            fill_value=0.32 * u.deg,
+            max_value=0.32 * u.deg,
+            percentile=68,
         )
         log.info("Optimizing G/H separation cut for best sensitivity")
         gh_cut_efficiencies = np.arange(
@@ -201,22 +201,23 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
             gammas["gh_score"],
             gammas["reco_energy"],
             bins=sensitivity_bins,
-            min_value=0.01,
-            fill_value=0.01,
+            min_value=0.3,
+            fill_value=0.3,
             max_value=1,
-            percentile=10,
+            percentile=5,
         )
         for tab in (gammas, background):
             tab["selected_gh"] = evaluate_binned_cut(
                 tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
             )
+
         theta_cuts_opt = calculate_percentile_cut(
             gammas[gammas["selected_gh"]]["theta"],
             gammas[gammas["selected_gh"]]["reco_energy"],
             bins=theta_bins,
             percentile=68,
-            fill_value=0.5 * u.deg,
-            max_value=0.5 * u.deg,
+            fill_value=0.32 * u.deg,
+            max_value=0.32 * u.deg,
             min_value=0.05 * u.deg,
         )
         gammas["selected_theta"] = evaluate_binned_cut(
@@ -234,10 +235,10 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
             gammas["gh_score"],
             gammas["reco_energy"],
             bins=sensitivity_bins,
-            min_value=0.01,
-            fill_value=0.01,
+            min_value=0.3,
+            fill_value=0.5,
             max_value=1,
-            percentile=30,
+            percentile=5,
         )
         for tab in (gammas, background):
             tab["selected_gh"] = evaluate_binned_cut(
@@ -257,35 +258,46 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
         )
         gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
     elif method == "global_loose":
-        sensitivity_bins = np.array([0.001, 100]) * u.TeV
+        sensitivity_bins = add_overflow_bins(
+            create_bins_per_decade(emin, emax, bins_per_decade=5)
+        )
+        sensitivity_bins[-1] = 100 * u.TeV
+        sensitivity_bins[0] = 1 * u.GeV
         theta_bins = sensitivity_bins
         gh_cuts = calculate_percentile_cut(
             gammas["gh_score"],
             gammas["reco_energy"],
             bins=sensitivity_bins,
-            min_value=0.01,
-            fill_value=0.01,
+            min_value=0.2,
+            fill_value=0.5,
             max_value=1,
-            percentile=20,
+            percentile=5,
         )
         for tab in (gammas, background):
             tab["selected_gh"] = evaluate_binned_cut(
                 tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
             )
+        # test without theta cut
         theta_cuts_opt = calculate_percentile_cut(
             gammas[gammas["selected_gh"]]["theta"],
             gammas[gammas["selected_gh"]]["reco_energy"],
             bins=theta_bins,
-            percentile=68,
+            percentile=100,
             fill_value=0.32 * u.deg,
             max_value=0.32 * u.deg,
-            min_value=0.05 * u.deg,
+            min_value=0.32 * u.deg,
         )
         gammas["selected_theta"] = evaluate_binned_cut(
             gammas["theta"], gammas["reco_energy"], theta_cuts_opt, operator.le
         )
         gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
 
+    signal_hist_no_cuts = create_histogram_table(
+        gammas, bins=sensitivity_bins
+    )
+    signal_hist_only_gh = create_histogram_table(
+        gammas[gammas["selected_gh"]], bins=sensitivity_bins
+    )
     # calculate sensitivity
     signal_hist = create_histogram_table(
         gammas[gammas["selected"]], bins=sensitivity_bins
@@ -298,6 +310,7 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
         background_radius=MAX_BG_RADIUS,
     )
     sensitivity = calculate_sensitivity(signal_hist, background_hist, alpha=ALPHA)
+    #sensitivity_only_gh = calculate_sensitivity(signal_hist, background_hist, alpha=ALPHA)
 
     # scale relative sensitivity by Crab flux to get the flux sensitivity
     spectrum = particles["gamma"]["target_spectrum"]
@@ -409,6 +422,10 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
     )
     hdus.append(fits.BinTableHDU(ang_res, name="ANGULAR_RESOLUTION"))
     hdus.append(fits.BinTableHDU(bias_resolution, name="ENERGY_BIAS_RESOLUTION"))
+    hdus.append(fits.BinTableHDU(signal_hist_no_cuts, name="SIGNAL"))
+    hdus.append(fits.BinTableHDU(signal_hist_only_gh, name="SIGNAL_GH"))
+    hdus.append(fits.BinTableHDU(signal_hist, name="SIGNAL_CUTS"))
+
 
     log.info("Writing outputfile")
     fits.HDUList(hdus).writeto(irfoutput, overwrite=True)

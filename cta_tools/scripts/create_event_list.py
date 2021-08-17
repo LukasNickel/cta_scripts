@@ -79,11 +79,12 @@ def main(pattern, cut_file, output):
         print("\nEvents in run: ", nevents)
         print('Events nach g/h cut: ', ngh, ngh/nevents*100, "%")
         theta_on, off_thetas = calc_wobble_thetas(data)
-        passed_theta = evaluate_binned_cut(theta_on, data['reco_energy'], gh_cuts, operator.le)
+        passed_theta = evaluate_binned_cut(theta_on, data['reco_energy'], theta_cuts, operator.le)
         for theta in off_thetas:
-            passed_theta |= evaluate_binned_cut(theta, data['reco_energy'], gh_cuts, operator.le)
+            passed_theta |= evaluate_binned_cut(theta, data['reco_energy'], theta_cuts, operator.le)
 
-        data = data[passed_theta]
+        data['PASSED_THETA_CUT'] = passed_theta
+        #data = data[passed_theta]
         ntheta = len(data)
         print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")
 
@@ -105,21 +106,21 @@ def main(pattern, cut_file, output):
 
         selected_times = data['TIME']
         mjd_offset = selected_times[0]
-        offset_times = (selected_times - mjd_offset).to_value(u.s)
+        offset_times = (selected_times - mjd_offset).to(u.s)
         int_mjd_offset = np.floor(mjd_offset.mjd)
         float_mjd_offset = (mjd_offset.value - int_mjd_offset)
         
         timerefs.append(mjd_offset)
 
-
-        events = data[['RA', 'DEC', 'ENERGY']]
+        #offset_times *= u.s
+        events = data[['RA', 'DEC', 'ENERGY', 'PASSED_THETA_CUT']]
         # can gammapy work with this or do we need to convert?
         events['TIME'] = offset_times
         event_header = DEFAULT_HEADER.copy()
         event_header['HDUCLAS1'] = 'EVENTS'
         event_header['OBS_ID'] = data['obs_id'][0]
-        event_header['TSTART'] = offset_times[0]
-        event_header['TSTOP'] = offset_times[-1]
+        event_header['TSTART'] = offset_times[0].to_value(u.s)
+        event_header['TSTOP'] = offset_times[-1].to_value(u.s)
 
         event_header['MJDREFI'] = int_mjd_offset
         event_header['MJDREFF'] = float_mjd_offset
@@ -127,7 +128,7 @@ def main(pattern, cut_file, output):
         event_header['TIMESYS'] = 'tai'
         event_header['TIMEREF'] = 'TOPOCENTER'
         event_header['ONTIME'] = ontime
-        event_header['DEADC'] = dead_corr #1/(1+2.6e-5*2800)# taken from the lstchain pr (livetime/ontime)
+        event_header['DEADC'] = dead_corr
         event_header['LIVETIME'] = event_header["DEADC"]*event_header["ONTIME"]
         # assuming constant pointing
         event_header['RA_PNT'] = pointing_icrs[0].ra.deg
@@ -155,7 +156,10 @@ def main(pattern, cut_file, output):
         pointing_header['OBSGEO-L'] = -17.89139
         pointing_header['OBSGEO-B'] = 28.76139
         pointing_header['OBSGEO-H'] = 2184.
-
+        pointing_header['GEOLON'] = -17.89139
+        pointing_header['GEOLAT'] = 28.76139
+        pointing_header['ALTITUDE'] = 2184.
+        
         hdus = [
             fits.PrimaryHDU(),
             fits.BinTableHDU(events, header=event_header, name="EVENTS"),
@@ -198,7 +202,7 @@ def main(pattern, cut_file, output):
             'aeff_2d',
             '.',
             'irfs.fits.gz',
-            'EFFECTIVE_AREA'
+            'EFFECTIVE_AREA_ONLY_GH'
         ))
         index.append((
             data['obs_id'][0],
@@ -214,16 +218,16 @@ def main(pattern, cut_file, output):
             'edisp_2d',
             '.',
             'irfs.fits.gz',
-            'ENERGY_DISPERSION'
+            'ENERGY_DISPERSION_ONLY_GH'
         ))
-        index.append((
-            data['obs_id'][0],
-            'bkg',
-            'bkg_2d',
-            '.',
-            f'{data["obs_id"][0]}.fits.gz',
-            'BACKGROUND',
-        ))
+        #index.append((
+        #    data['obs_id'][0],
+        #    'bkg',
+        #    'bkg_2d',
+        #    '.',
+        #    f'{data["obs_id"][0]}.fits.gz',
+        #    'BACKGROUND',
+        #))
 
     # build index file
     observation_table = QTable(
@@ -232,16 +236,17 @@ def main(pattern, cut_file, output):
         #units=['', 'deg', 'deg', 's', 's', '']
     )
     #from IPython import embed; embed()
-    observation_table['TSTART'] -= timerefs[0]
+    ref = min(timerefs)
+    observation_table['TSTART'] -= ref
     observation_table['TSTART'] = observation_table['TSTART'].to(u.s)
-    observation_table['TSTOP'] -= timerefs[0]
+    observation_table['TSTOP'] -= ref
     observation_table['TSTOP'] = observation_table['TSTOP'].to(u.s)
     obs_header = DEFAULT_HEADER.copy()
     obs_header['HDUCLAS1'] = 'INDEX'
     obs_header['HDUCLAS2'] = 'OBS'
     obs_header['TELESCOP'] = 'LST1'
-    obs_header['MJDREFI'] = np.floor(timerefs[0].value)#[0] #int(data['TIME'][0].mjd)
-    obs_header['MJDREFF'] = timerefs[0].value - obs_header['MJDREFI']
+    obs_header['MJDREFI'] = np.floor(ref.value)
+    obs_header['MJDREFF'] = ref.value - obs_header['MJDREFI']
     obs_header['TIMEUNIT'] = 's'
     obs_header['TIMESYS'] = 'tai'
     obs_header['TIMEREF'] = 'TOPOCENTER'

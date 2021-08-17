@@ -6,7 +6,7 @@ PYIRF_COLUMN_MAP = {
     "gamma_energy_prediction": "reco_energy",
     "altitude": "pointing_alt",
     "azimuth": "pointing_az",
-    "gammaness": "gh_score",
+    "gammaness": "gh_score",  
 }
 
 

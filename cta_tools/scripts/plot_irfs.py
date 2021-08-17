@@ -1,10 +1,13 @@
+from cta_tools.plotting import preliminary
 from cta_tools.plotting.irfs import (
     plot_aeff,
     plot_edisp,
     plot_sensitivity,
+    plot_sensitivity_gp,
     plot_angular_resolution,
     plot_energy_bias_resolution,
     plot_background,
+    plot_efficiency,
     plot_theta_cuts,
     plot_gh_cuts,
 )
@@ -25,21 +28,41 @@ else:
 def main(infile, output):
 
     figures = []
-
+    magic = QTable.read('magic_sensitivity_2014.ecsv')
+    for k in filter(lambda k: k.startswith('sensitivity_') or k.startswith('e_'), magic.colnames):
+        magic[k].info.format = '.3g'
+    magic['reco_energy_low'] = magic['e_min']
+    magic['reco_energy_high'] = magic['e_max']
+    magic['reco_energy_center'] = magic['e_center']
+    magic['flux_sensitivity'] = magic['sensitivity_lima_5off']
     sens = QTable.read(infile, hdu="SENSITIVITY")
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
-    plot_sensitivity(sens[1:-1], ax)
+    plot_sensitivity(sens[1:-1], ax, label='LST-1')
+
+    plot_sensitivity(magic, ax, label='MAGIC')
+    ax.legend()
+   
+    figures.append(plt.figure())
+    ax = figures[-1].add_subplot(1, 1, 1)
+    plot_sensitivity_gp(sens[1:-1], ax)
 
     aeff = QTable.read(infile, hdu="EFFECTIVE_AREA")
+    aeff_only_gh = QTable.read(infile, hdu="EFFECTIVE_AREA_ONLY_GH")
+    aeff_no_cuts = QTable.read(infile, hdu="EFFECTIVE_AREA_NO_CUTS")
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
-    plot_aeff(aeff[0], ax)
+    plot_aeff(aeff[0], ax, label='gh + theta')
+    plot_aeff(aeff_only_gh[0], ax, label='Only GH')
+    plot_aeff(aeff_no_cuts[0], ax, label='No Cuts')
+    ax.legend()
 
     edisp = QTable.read(infile, hdu="ENERGY_DISPERSION")
+    edisp_only_gh = QTable.read(infile, hdu="ENERGY_DISPERSION_ONLY_GH")
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
-    plot_edisp(edisp[0], ax)
+    plot_edisp(edisp[0], ax, label='gh + theta')
+    plot_edisp(edisp_only_gh[0], ax, label='only gh')
 
     angres = QTable.read(infile, hdu="ANGULAR_RESOLUTION")
     figures.append(plt.figure())
@@ -67,6 +90,13 @@ def main(infile, output):
     ax = figures[-1].add_subplot(1, 1, 1)
     plot_gh_cuts(ghcuts, ax)
 
+    signal = QTable.read(infile, hdu="SIGNAL")
+    signal_gh = QTable.read(infile, hdu="SIGNAL_GH")
+    signal_cuts = QTable.read(infile, hdu="SIGNAL_CUTS")
+    figures.append(plt.figure())
+    ax = figures[-1].add_subplot(1, 1, 1)
+    plot_efficiency({'NO CUTS': signal,'ONLY GH': signal_gh,'CUTS': signal_cuts} , ax)
+    
     if output is None:
         plt.show()
     else:

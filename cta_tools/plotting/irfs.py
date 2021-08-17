@@ -1,9 +1,42 @@
 from pyirf.utils import cone_solid_angle
 import numpy as np
 import astropy.units as u
+import matplotlib.pyplot as plt
+from astropy.coordinates import Angle, SkyCoord
+from regions import CircleSkyRegion
+from gammapy.makers import SpectrumDatasetMaker
+from gammapy.data import Observation
+from gammapy.estimators import SensitivityEstimator
+from gammapy.datasets import SpectrumDataset, SpectrumDatasetOnOff
+from gammapy.maps import MapAxis
 
 
 def plot_sensitivity(sensitivity, ax=None, label=None):
+    unit = u.Unit("erg cm-2 s-1")
+    ax.errorbar(
+        sensitivity["reco_energy_center"].to_value(u.TeV),
+        (
+            (sensitivity["reco_energy_center"].to(u.TeV)) ** 2
+            * sensitivity["flux_sensitivity"]
+        ).to_value(unit),
+        xerr=(
+            sensitivity["reco_energy_high"] - sensitivity["reco_energy_low"]
+        ).to_value(u.TeV)
+        / 2,
+        ls="",
+        label=label,
+    )
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Reconstructed energy / TeV")
+    ax.set_ylabel(
+        rf"$(E^2 \cdot \mathrm{{Flux Sensitivity}}) /$ ({unit.to_string('latex')})"
+    )
+    ax.set_title("Sensitivity")
+    return 0
+
+
+def plot_sensitivity_gp(sensitivity, ax=None, label=None):
     unit = u.Unit("erg cm-2 s-1")
     ax.errorbar(
         sensitivity["reco_energy_center"].to_value(u.TeV),
@@ -153,4 +186,20 @@ def plot_gh_cuts(gh_cuts, ax=None):
     ax.set_xscale("log")
     ax.set_xlabel("True energy / TeV")
     ax.set_ylabel("G/H-Cut")
+    return 0
+    
+def plot_efficiency(signals, ax=None, label=None):
+    all_events = signals['NO CUTS']["n_weighted"]
+    for key, value in signals.items():
+        print(value["n_weighted"] / all_events)
+        ax.errorbar(
+            0.5 * (value["reco_energy_low"] + value["reco_energy_high"]).to_value(u.TeV),
+            value["n_weighted"] / all_events,
+            xerr=0.5 * (value["reco_energy_low"] - value["reco_energy_high"]).to_value(u.TeV),
+            ls="",
+            label=key,
+        )
+    ax.set_xscale("log")
+    ax.set_xlabel("True energy / TeV")
+    ax.set_ylabel("Gamma Efficiency")
     return 0

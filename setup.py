@@ -9,6 +9,7 @@ setup(
         "console_scripts": [
             "lst_aict_convert = cta_tools.scripts.file_convert:main",
             "plot_theta2 = cta_tools.scripts.plot_theta2:main",
+            "plot_dl3 = cta_tools.scripts.plot_dl3:main",
             "plot_irfs = cta_tools.scripts.plot_irfs:main",
             "plot_pointings = cta_tools.scripts.plot_pointings:main",
             "plot_features = cta_tools.scripts.plot_features:main",

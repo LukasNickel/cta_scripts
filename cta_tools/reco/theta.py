@@ -42,35 +42,48 @@ def calc_mc_theta(data):
 
 
 def calc_wobble_thetas(data, source=crab_nebula, n_off=5):
-    altaz = AltAz(location=location, obstime=data["time"])
-    pointing = SkyCoord(
-        alt=data["pointing_alt"],
-        az=data["pointing_az"],
-        frame=altaz,
+    if 'RA_PNT' in data.keys():
+        icrs_pointings = SkyCoord(
+            ra=data["RA_PNT"],
+            dec=data["DEC_PNT"],
+            frame='icrs',
+        )
+        icrs_preds = SkyCoord(
+            ra=data["RA"],
+            dec=data["DEC"],
+            frame='icrs',
+        )
+    else:
+        altaz = AltAz(location=location, obstime=data["time"])
+        pointing = SkyCoord(
+            alt=data["pointing_alt"],
+            az=data["pointing_az"],
+            frame=altaz,
+        )
+        camera_frame = CameraFrame(
+            telescope_pointing=pointing,
+            focal_length=data["focal_length"],
+            obstime=data["time"],
+            location=location,
+        )
+        cam_coords = SkyCoord(
+            x=data["source_x_pred"], y=data["source_y_pred"], frame=camera_frame
+        )
+        icrs_preds = cam_coords.transform_to("icrs")
+        icrs_pointings = pointing.transform_to('icrs')
+    icrs_source = source.transform_to('icrs')
+    
+    wobble_offset = icrs_pointings.separation(icrs_source)
+ 
+    source_angle = icrs_pointings.position_angle(icrs_source)
+    off_positions = icrs_pointings.directional_offset_by(
+        separation=wobble_offset,
+        position_angle=source_angle + np.arange(360 / (n_off + 1), 360, 360 / (n_off + 1))[:, None] * u.deg
     )
-    camera_frame = CameraFrame(
-        telescope_pointing=pointing,
-        focal_length=data["focal_length"],
-        obstime=data["time"],
-        location=location,
-    )
-    cam_coords = SkyCoord(
-        x=data["source_x_pred"], y=data["source_y_pred"], frame=camera_frame
-    )
-    icrs_preds = cam_coords.transform_to("icrs")
-    source_cam = source.transform_to(camera_frame)
 
-    r = np.sqrt((source_cam.x) ** 2 + (source_cam.y) ** 2)
-    phi0 = np.arctan2(source_cam.y.to_value(u.m), source_cam.x.to_value(u.m))
-
-    theta_on = icrs_preds.separation(source.transform_to("icrs")).to_value(u.deg)
+    theta_on = icrs_preds.separation(icrs_source).to(u.deg)
     theta_offs = []
-    for off in range(1, n_off + 1):
-        new_phi = phi0 + 2 * np.pi * off / (n_off + 1)
-        off_pos = SkyCoord(
-            x=r * np.cos(new_phi),
-            y=r * np.sin(new_phi),
-            frame=camera_frame,
-        ).transform_to("icrs")
-        theta_offs.append(off_pos.separation(icrs_preds).to_value(u.deg))
+    for off_pos in off_positions:
+        theta_offs.append(off_pos.separation(icrs_preds).to(u.deg))
+
     return theta_on, theta_offs

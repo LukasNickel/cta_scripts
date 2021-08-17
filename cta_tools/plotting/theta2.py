@@ -19,14 +19,21 @@ def theta2(
     ax=None,
     window=[0, 1],
     bins=100,
+    on_weights=None,
+    off_weights=None,
 ):
 
+    if on_weights is None:
+        on_weights = np.full_like(theta2_on, 1).astype('bool')
+    if off_weights is None:
+        off_weights = np.full_like(theta2_off, 1).astype('bool')
     ax = ax or plt.gca()
-
-    ax.hist(theta2_on, bins=bins, range=window, histtype="step", color="r", label="ON")
+    bins_=np.linspace(window[0], window[1], bins)
+    #from IPython import embed; embed()
+    ax.hist(theta2_on, bins=bins_, range=window, histtype="step", color="r", label="ON")
     ax.hist(
         theta2_off,
-        bins=bins,
+        bins=bins_,
         range=window,
         histtype="stepfilled",
         color="tab:blue",
@@ -35,8 +42,10 @@ def theta2(
         weights=np.full_like(theta2_off, scaling),
     )
 
-    n_off = np.count_nonzero(theta2_off < cut)
-    n_on = np.count_nonzero(theta2_on < cut)
+    print(theta2_on.shape, theta2_off.shape)
+    print(np.count_nonzero(on_weights), np.count_nonzero(off_weights))
+    n_off = np.count_nonzero(theta2_off[off_weights] < cut)
+    n_on = np.count_nonzero(theta2_on[on_weights] < cut)
     li_ma = li_ma_significance(n_on, n_off, scaling)
     n_exc_mean = n_on - scaling * n_off
     n_exc_std = np.sqrt(n_on + scaling ** 2 * n_off)

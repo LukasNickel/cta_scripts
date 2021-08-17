@@ -47,11 +47,10 @@ def main(
         data = read_lst_dl1(f)
         observations[data[0]["obs_id"]] = data
         run_time = (data["time"][-1] - data["time"][0]).to(u.s)
-        #data["weights"] = 1 / run_time.to_value(u.s)
         obstime += run_time
 
     combined = vstack(list(observations.values()))
-    #combined["weights"] = 1 / obstime.to_value(u.s)
+    combined["weights"] = 1 / obstime.to_value(u.s)
 
     proton_sim_info = read_sim_info(protons)
     protons = read_mc_dl1(protons)
@@ -59,27 +58,28 @@ def main(
     protons["weights"] = calculate_event_weights(
         protons["true_energy"],
         IRFDOC_PROTON_SPECTRUM,
-        PowerLaw.from_simulation(proton_sim_info, obstime),
+        PowerLaw.from_simulation(proton_sim_info, 1*u.s),
     )
     electron_sim_info = read_sim_info(electrons)
     electrons = read_mc_dl1(electrons)
     electrons["weights"] = calculate_event_weights(
         electrons["true_energy"],
         IRFDOC_ELECTRON_SPECTRUM,
-        PowerLaw.from_simulation(electron_sim_info, obstime),
+        PowerLaw.from_simulation(electron_sim_info, 1*u.s),
     )
     background = vstack([protons, electrons])
     figs = []
-    figs += plot_dl1(observations)
-    figs += plot_dl1({"observations": combined, "background mc": background})
-    figs.append(compare_rates(
-        combined['hillas_intensity'],
-        background['hillas_intensity'],
-        bins=np.logspace(np.log10(combined['hillas_intensity'].min()), np.log10(combined['hillas_intensity'].max()), 30),
-        w2=background['weights'],
-        l1='observation',
-        l2='mc',
-     ))
+    figs += compare_rates(
+        combined['intensity'],
+        background['intensity'],
+        bins=np.logspace(np.log10(background['intensity'].min()), np.log10(background['intensity'].max()), 30)
+    )
+    figs[-1].title('Intensity')
+    figs += compare_rates(
+        combined['gamma_energy_prediction'],
+        background['gamma_energy_prediction'],
+    )
+    figs[-1].title('Energy prediction')
 
     if output is None:
         plt.show()

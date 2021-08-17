@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
-
+from pyirf.binning import create_bins_per_decade
+import astropy.units as u
 
 def plot_dl1(data):
     figures = []
@@ -38,10 +39,13 @@ def plot_dl1(data):
         # delta_t
     ]
 
+    bins=None
     for feature in logx:
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
         for j, (key, dataset) in enumerate(data.items()):
+            if feature not in dataset.keys():
+                continue
             v = dataset[feature]
             if v.unit:
                 v = v.value
@@ -61,9 +65,14 @@ def plot_dl1(data):
         ax.set_xscale("log")
         ax.legend()
     for feature in linx:
+        print(feature)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
         for j, (key, dataset) in enumerate(data.items()):
+            print(j, dataset.keys())
+            if feature not in dataset.keys():
+                print('skip this')
+                continue
             v = dataset[feature]
             if v.unit:
                 v = v.value
@@ -82,3 +91,32 @@ def plot_dl1(data):
         ax.set_yscale("log")
         ax.legend()
     return figures
+    
+    
+    
+def compare_rates(e1, e2, bins=None, l1=None, l2=None, w1=None, w2=None):
+    fig = plt.figure()
+    gs = fig.add_gridspec(3,1)
+    ax_hist = fig.add_subplot(gs[:-1, :])
+    ax_hist.set_xscale('log')
+    ax_hist.set_yscale('log')
+    ax_ratio = fig.add_subplot(gs[-1, :], sharex=ax_hist)
+    if bins is None:
+        bins = create_bins_per_decade(50*u.GeV, 10*u.TeV, 5)
+    n1, bins1, patches1 = ax_hist.hist(e1, bins=bins, histtype='step', label=l1, weights=w1)
+    n2, bins2, patches2 = ax_hist.hist(e2, bins=bins, histtype='step', label=l2, weights=w2)
+    c = 0.5 * (bins[:-1] + bins[1:])
+    r = n1 / n2
+    xerr = np.diff(bins)
+    if isinstance(c, u.Quantity):
+        c = c.to_value()
+        xerr = xerr.to_value()
+    ax_ratio.errorbar(c, r, xerr=xerr, linestyle="", color="black")
+    ax_ratio.axhline(y=1, color="black", linestyle="--", alpha=.3, linewidth=1)
+    ax_hist.legend()
+    return fig
+    
+    
+    
+    
+    

@@ -150,6 +150,12 @@ def read_lst_dl2(path, drop_nans=True, rename=True):
     return events
 
 
+def read_dl3(path):
+    events = QTable.read(path, 'EVENTS')
+    pointings = QTable.read(path, 'POINTING')
+    return join(events, pointings, keys='TIME')
+
+
 def read_sim_info(path):
     run_info = QTable.read(path, "/configuration/simulation/run")
     e_min = np.unique(run_info.columns["energy_range_min"])
@@ -165,7 +171,7 @@ def read_sim_info(path):
 
     sim_info = SimulatedEventsInfo(
         n_showers=(
-            run_info.columns["shower_reuse"] * run_info.columns["num_showers"]
+            run_info.columns["shower_reuse"] * run_info.columns["num_showers"]# * 0.9 # hotfix 06.03 due to wrong event splitting. fix in aict tools
         ).sum(),
         energy_min=u.Quantity(e_min[0], u.TeV),
         energy_max=u.Quantity(e_max[0], u.TeV),
