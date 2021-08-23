@@ -11,6 +11,8 @@ setup(
             "plot_theta2 = cta_tools.scripts.plot_theta2:main",
             "plot_dl3 = cta_tools.scripts.plot_dl3:main",
             "plot_irfs = cta_tools.scripts.plot_irfs:main",
+            "plot_rates = cta_tools.scripts.plot_rates:main",
+            "plot_time_evolution = cta_tools.scripts.plot_time_evolution:main",
             "plot_pointings = cta_tools.scripts.plot_pointings:main",
             "plot_features = cta_tools.scripts.plot_features:main",
             "mc_data_comparisons = cta_tools.scripts.mc_data_comparisons:main",
