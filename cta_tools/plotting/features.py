@@ -1,110 +1,22 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from pyirf.binning import create_bins_per_decade
 import astropy.units as u
+from astropy.table import Table
+from cta_tools.utils import get_value
 
-def plot_dl1(data):
-    figures = []
 
-    logx = [
-        "hillas_intensity",
-    ]
-    linx = [
-        "hillas_length",
-        "hillas_width",
-        "hillas_skewness",
-        "hillas_kurtosis",
-        "timing_slope",
-        "timing_intercept",
-        "leakage_pixels_width_1",
-        "leakage_intensity_width_2",
-        "leakage_pixels_width_2",
-        "morphology_num_islands",
-        "morphology_num_pixels",
-        "concentration_cog",
-        "concentration_core",
-        "concentration_pixel",
-        "intensity_max",
-        "intensity_min",
-        "intensity_mean",
-        "intensity_std",
-        "intensity_skewness",
-        "intensity_kurtosis",
-        "peak_time_max",
-        "peak_time_min",
-        "peak_time_mean",
-        "peak_time_std",
-        "peak_time_kurtosis",
-        "peak_time_skewness",
-        # delta_t
-    ]
-
-    bins=None
-    for feature in logx:
-        figures.append(plt.figure())
-        ax = figures[-1].add_subplot(1, 1, 1)
-        for j, (key, dataset) in enumerate(data.items()):
-            if feature not in dataset.keys():
-                continue
-            v = dataset[feature]
-            if v.unit:
-                v = v.value
-            else:
-                v = v.data
-            if j == 0:
-                bins = np.logspace(np.log10(v.min()), np.log10(v.max()), 30)
-            ax.hist(
-                v,
-                bins,
-                histtype="step",
-                label=key,
-                weights=dataset["weights"] if "weights" in dataset.keys() else None,
-            )
-        ax.set_title(feature)
-        ax.set_yscale("log")
-        ax.set_xscale("log")
-        ax.legend()
-    for feature in linx:
-        print(feature)
-        figures.append(plt.figure())
-        ax = figures[-1].add_subplot(1, 1, 1)
-        for j, (key, dataset) in enumerate(data.items()):
-            print(j, dataset.keys())
-            if feature not in dataset.keys():
-                print('skip this')
-                continue
-            v = dataset[feature]
-            if v.unit:
-                v = v.value
-            else:
-                v = v.data
-            if j == 0:
-                bins = np.linspace(v.min(), v.max(), 30)
-            ax.hist(
-                v,
-                bins,
-                histtype="step",
-                label=key,
-                weights=dataset["weights"] if "weights" in dataset.keys() else None,
-            )
-        ax.set_title(feature)
-        ax.set_yscale("log")
-        ax.legend()
-    return figures
-    
-    
-    
-def compare_rates(e1, e2, bins=None, l1=None, l2=None, w1=None, w2=None):
+def compare_rates(counts1, counts2, bins, l1=None, l2=None):
+    """
+    should be able to use it to plot rates against time as well with manual bins
+    """
     fig = plt.figure()
     gs = fig.add_gridspec(3,1)
     ax_hist = fig.add_subplot(gs[:-1, :])
     ax_hist.set_xscale('log')
     ax_hist.set_yscale('log')
     ax_ratio = fig.add_subplot(gs[-1, :], sharex=ax_hist)
-    if bins is None:
-        bins = create_bins_per_decade(50*u.GeV, 10*u.TeV, 5)
-    n1, bins1, patches1 = ax_hist.hist(e1, bins=bins, histtype='step', label=l1, weights=w1)
-    n2, bins2, patches2 = ax_hist.hist(e2, bins=bins, histtype='step', label=l2, weights=w2)
+    n1, bins1, patches1 = ax_hist.hist(bins[:-1], weights=counts1, bins=bins, histtype='step', label=l1)
+    n2, bins2, patches2 = ax_hist.hist(bins[:-1], weights=counts2, bins=bins, histtype='step', label=l2)
     c = 0.5 * (bins[:-1] + bins[1:])
     r = n1 / n2
     xerr = np.diff(bins)
@@ -115,8 +27,53 @@ def compare_rates(e1, e2, bins=None, l1=None, l2=None, w1=None, w2=None):
     ax_ratio.axhline(y=1, color="black", linestyle="--", alpha=.3, linewidth=1)
     ax_hist.legend()
     return fig
-    
-    
-    
-    
-    
+
+
+def hist_feature(data, column, ax=None, bins=None, logx=True, logy=True, label=None):
+    if not ax:
+        fig, ax = plt.subplots()
+    values = data[column]
+    if isinstance(data, Table):
+        if values.unit:
+            values = values.value
+        else:
+            values = values.data
+    values = get_value(data, column)
+    if logx:
+        if bins is None:
+            bins = np.logspace(np.log10(np.nanmin(values)), np.log10(np.nanmax(values)), 30)
+        ax.set_xscale("log")
+    else:
+        if bins is None:
+            bins = np.logspace(np.nanmin(values), np.nanmax(values), 30)
+    ax.hist(
+        values,
+        bins,
+        histtype="step",
+        weights=data["weights"] if "weights" in data.keys() else None,
+        label=label
+    )
+    ax.set_title(column)
+    if logy:
+        ax.set_yscale("log")
+    ax.legend()
+    return ax
+
+
+def plot_binned_time_evolution(binned,  ax=None):
+    """
+    delta t is wrt the first event of the df.
+    This can be tricky when comparing different runs! find a better solution!
+    index obs id maybe
+    also seperate tels?
+    """
+    ax.errorbar(
+        binned["center"],
+        binned["mean"],
+        xerr=0.5 * binned["width"],
+        yerr=binned["std"],
+        # label=label,
+        linestyle="",
+    )
+    ax.set_xlabel("time w.r.t. the first event [s]")
+    return ax

@@ -60,16 +60,10 @@ def calc_wobble_thetas(data, source=crab_nebula, n_off=5):
             az=data["pointing_az"],
             frame=altaz,
         )
-        camera_frame = CameraFrame(
-            telescope_pointing=pointing,
-            focal_length=data["focal_length"],
-            obstime=data["time"],
-            location=location,
+        reco_coords = SkyCoord(
+            alt=data["alt_prediction"], az=data["az_prediction"], frame=altaz
         )
-        cam_coords = SkyCoord(
-            x=data["source_x_pred"], y=data["source_y_pred"], frame=camera_frame
-        )
-        icrs_preds = cam_coords.transform_to("icrs")
+        icrs_preds = reco_coords.transform_to("icrs")
         icrs_pointings = pointing.transform_to('icrs')
     icrs_source = source.transform_to('icrs')
     

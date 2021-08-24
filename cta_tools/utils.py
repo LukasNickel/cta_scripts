@@ -1,5 +1,7 @@
 import numpy as np
 import astropy.units as u
+from astropy.table import Table, QTable
+import pandas as pd
 
 
 PYIRF_COLUMN_MAP = {
@@ -76,3 +78,36 @@ def add_units(astro_table):
         except Exception as e:
             print(e)
     return astro_table
+
+
+def bin_df(df, bin_column, target_column, bins=None, log=True):
+    if isinstance(df, Table):
+        df = df.to_pandas()
+    else:
+        df = df.copy()
+    if bins is None:
+        if log:
+            bins = np.logspace(np.log10(1), np.log10(np.nanmax(df[bin_column])), 50)
+        else:
+            bins = np.linspace(np.nanmin(df[bin_column]), np.nanmax(df[bin_column]), 50)
+    df["bin"] = np.digitize(df[bin_column], bins)
+    grouped = df.groupby("bin")
+    binned = pd.DataFrame(index=np.arange(1, len(bins)))
+    binned["center"] = 0.5 * (bins[:-1] + bins[1:])
+    binned["width"] = np.diff(bins)
+    binned["mean"] = grouped[target_column].mean()
+    binned["std"] = grouped[target_column].std()
+    return binned
+
+
+def get_value(df, column):
+    values = df[column]
+    if isinstance(df, QTable):
+        if values.unit:
+            values = values.value
+        else:
+            values = values.data
+    if isinstance(df, Table):
+        values = values.data
+
+    return values

@@ -9,7 +9,8 @@ import click
 import numpy as np
 import astropy.units as u
 from cta_tools.plotting.theta2 import theta2
-from cta_tools.io import read_lst_dl2, read_dl3
+from astropy.table import Table
+from cta_tools.io import read_lst_dl2, read_dl3, save_plot_data, read_plot_data
 from astropy.coordinates import SkyCoord
 from cta_tools.reco.theta import calc_wobble_thetas
 import matplotlib
@@ -20,12 +21,13 @@ else:
 
 
 def plot(data, ontime, ax):
-    on = data['theta_on'].to_value(u.deg)
+#    from IPython import embed;embed()
+    on = data['theta_on'].quantity.to_value(u.deg)
     off = []
     noff = 0
     for c in data.keys():
         if c.startswith('theta_off'):
-            off.append(data[c].to_value(u.deg))
+            off.append(data[c].quantity.to_value(u.deg))
             noff += 1
     theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.1, ontime=ontime, ax=ax, bins=30, window=(0, 0.1))
     return ax
@@ -37,37 +39,46 @@ def plot(data, ontime, ax):
 @click.option("--source_ra", default=83.63308333)
 @click.option("--source_dec", default=22.0145)
 def main(input_files, output, source_ra, source_dec,):
-    ontime = 0
-    runs = []
-    for f in input_files:
-        print(f)
-        if f.endswith('.h5'):
-            data = read_lst_dl2(f)
-            time_key = 'time'
-            energy_key = 'reco_energy'
-        else:
-            # adding a rename option would be more in line with what i do elsewhere....
-            data = read_dl3(f)
-            time_key = 'TIME'
-            energy_key = 'ENERGY'
+    cache = Path(output).with_suffix(".h5")
+    if cache.exists():
+        events = Table.read(cache)
+        ontime = events.meta["ontime"]
+        energy_key = events.meta["energy_key"]
+    else:
+        ontime = 0
+        runs = []
+        for f in input_files:
+            print(f)
+            if f.endswith('.h5'):
+                data = read_lst_dl2(f)
+                time_key = 'time'
+                energy_key = 'reco_energy'
+            else:
+                # adding a rename option would be more in line with what i do elsewhere....
+                data = read_dl3(f)
+                time_key = 'TIME'
+                energy_key = 'ENERGY'
 
-        source=SkyCoord(ra=source_ra*u.deg, dec=source_dec*u.deg, frame='icrs')
-        theta_on, off_thetas = calc_wobble_thetas(data, source=source)
-        data['theta_on'] = theta_on
-        for i, theta_off in enumerate(off_thetas):
-            data[f'theta_off_{i}'] = theta_off
+            source=SkyCoord(ra=source_ra*u.deg, dec=source_dec*u.deg, frame='icrs')
+            theta_on, off_thetas = calc_wobble_thetas(data, source=source)
+            data['theta_on'] = theta_on
+            for i, theta_off in enumerate(off_thetas):
+                data[f'theta_off_{i}'] = theta_off
 
-        
-        ontime += (data[time_key][-1] - data[time_key][0])#.to_value(u.s)
-        ontime += 0
-        runs.append(data)
+            
+            ontime += (data[time_key][-1] - data[time_key][0])#.to_value(u.s)
+            ontime += 0
+            runs.append(data)
+        events = vstack(runs)
+        events.meta["ontime"] = ontime
+        events.meta["energy_key"] = energy_key
+        events.write(cache, serialize_meta=True)
 
-    events = vstack(runs)
 
     figures = []
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
-    plot(data, ontime, ax)
+    plot(events, ontime, ax)
     ax.set_title('All energies')
 
     energy_selection = [
@@ -81,136 +92,136 @@ def main(input_files, output, source_ra, source_dec,):
     ]
     for low, high in energy_selection:
         print(low, high)
-        selection = (data[energy_key] > low) & (data[energy_key] <= high)
+        selection = (events[energy_key] > low) & (events[energy_key] <= high)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        plot(data[selection], ontime, ax)
+        plot(events[selection], ontime, ax)
         ax.set_title(f'{low} - {high}')        
 
-    data = data[data[energy_key] > 100*u.GeV]
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.6)
+    events = events[events[energy_key] > 100*u.GeV]
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.6)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, .3))
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.7)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.7)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, 0.3))  
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.8)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.8)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, 0.3))  
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.85)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.85)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, 0.3))    
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.6) & (data['reco_energy'] > 100 *u.GeV)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.6) & (events['reco_energy'] > 100 *u.GeV)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, .3))
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.7) & (data['reco_energy'] > 100 *u.GeV)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.7) & (events['reco_energy'] > 100 *u.GeV)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, 0.3))  
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.8) & (data['reco_energy'] > 100 *u.GeV)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.8) & (events['reco_energy'] > 100 *u.GeV)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, 0.3))  
-    if 'gh_score' in data.keys():
-        selection = (data['gh_score'] > 0.85) & (data['reco_energy'] > 100 *u.GeV)
+    if 'gh_score' in events.keys():
+        selection = (events['gh_score'] > 0.85) & (events['reco_energy'] > 100 *u.GeV)
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, scaling=1/noff, cut=.04, ontime=ontime, ax=ax, bins=100, window=(0, 0.3))  
     
 
-    if 'PASSED_THETA_CUT' in data.keys():
-        selection = list(data['PASSED_THETA_CUT'])
+    if 'PASSED_THETA_CUT' in events.keys():
+        selection = list(events['PASSED_THETA_CUT'])
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data['theta_on'].to_value(u.deg)
+        on = events['theta_on'].quantity.to_value(u.deg)
         w_on = selection
         off = []
         w_off = []
         noff = 0
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[c].to_value(u.deg))
+                off.append(events[c].quantity.to_value(u.deg))
                 w_off += selection
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, cut=0.04, scaling=1/noff, ontime=ontime, ax=ax, bins=30, window=(0, 1), on_weights=w_on, off_weights=w_off)  
-    if 'PASSED_THETA_CUT' in data.keys():
-        selection = data['PASSED_THETA_CUT']
+    if 'PASSED_THETA_CUT' in events.keys():
+        selection = events['PASSED_THETA_CUT']
         figures.append(plt.figure())
         ax = figures[-1].add_subplot(1, 1, 1)
-        on = data[selection]['theta_on'].to_value(u.deg)
+        on = events[selection]['theta_on'].quantity.to_value(u.deg)
         noff = 0
         off = []
-        for c in data.keys():
+        for c in events.keys():
             if c.startswith('theta_off'):
-                off.append(data[selection][c].to_value(u.deg))
+                off.append(events[selection][c].quantity.to_value(u.deg))
                 noff += 1
         theta2(on**2, np.array(off).ravel()**2, cut=0.04,  scaling=1/noff, ontime=ontime, ax=ax, bins=30, window=(0, 1))  
         

@@ -42,7 +42,7 @@ def main(path):
                 "event_id": data["event_id"],
             }
         )
-        append_predictions_cta(path, dt, "/dl1/monitoring/telescope", "delta_t")
+        append_predictions_cta(path, dt, "/dl1/monitoring/telescope/delta_t")
 
 
 if __name__ == "__main__":
