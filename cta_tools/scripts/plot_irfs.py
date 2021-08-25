@@ -28,19 +28,27 @@ else:
 def main(infile, output):
 
     figures = []
-    magic = QTable.read('magic_sensitivity_2014.ecsv')
-    for k in filter(lambda k: k.startswith('sensitivity_') or k.startswith('e_'), magic.colnames):
-        magic[k].info.format = '.3g'
-    magic['reco_energy_low'] = magic['e_min']
-    magic['reco_energy_high'] = magic['e_max']
-    magic['reco_energy_center'] = magic['e_center']
-    magic['flux_sensitivity'] = magic['sensitivity_lima_5off']
+    try:
+        magic = QTable.read('magic_sensitivity_2014.ecsv')
+    except:
+        print("Couldnt read reference")
+        magic = None
+
+
     sens = QTable.read(infile, hdu="SENSITIVITY")
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
     plot_sensitivity(sens[1:-1], ax, label='LST-1')
+    
+    if magic:
+        for k in filter(lambda k: k.startswith('sensitivity_') or k.startswith('e_'), magic.colnames):
+            magic[k].info.format = '.3g'
+        magic['reco_energy_low'] = magic['e_min']
+        magic['reco_energy_high'] = magic['e_max']
+        magic['reco_energy_center'] = magic['e_center']
+        magic['flux_sensitivity'] = magic['sensitivity_lima_5off']
 
-    plot_sensitivity(magic, ax, label='MAGIC')
+        plot_sensitivity(magic, ax, label='MAGIC')
     ax.legend()
    
     figures.append(plt.figure())
@@ -96,6 +104,7 @@ def main(infile, output):
     figures.append(plt.figure())
     ax = figures[-1].add_subplot(1, 1, 1)
     plot_efficiency({'NO CUTS': signal,'ONLY GH': signal_gh,'CUTS': signal_cuts} , ax)
+    ax.legend()
     
     if output is None:
         plt.show()

@@ -64,6 +64,6 @@ def get_icrs_prediction(data):
         location=location,
     )
     cam_coords = SkyCoord(
-        x=data["source_x_pred"], y=data["source_y_pred"], frame=camera_frame
+        alt=data["reco_alt"], az=data["reco_az"], frame=altaz
     )
     return cam_coords.transform_to("icrs")

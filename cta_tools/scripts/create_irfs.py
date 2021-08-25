@@ -2,8 +2,9 @@ import numpy as np
 import click
 import logging
 import operator
-
+import yaml
 from astropy import table
+from pathlib import Path
 import astropy.units as u
 from astropy.io import fits
 
@@ -20,7 +21,6 @@ from pyirf.benchmarks import energy_bias_resolution, angular_resolution
 from pyirf.spectral import (
     calculate_event_weights,
     PowerLaw,
-    CRAB_HEGRA,
     CRAB_MAGIC_JHEAP2015,
     IRFDOC_PROTON_SPECTRUM,
     IRFDOC_ELECTRON_SPECTRUM,
@@ -32,6 +32,11 @@ from pyirf.irf import (
     energy_dispersion,
     psf_table,
     background_2d,
+)
+from pyirf.gammapy import (   
+    create_psf_3d,
+    create_energy_dispersion_2d,
+    create_effective_area_table_2d,
 )
 
 from pyirf.io import (
@@ -62,18 +67,22 @@ def get_global_cut_table(cut_value):
 @click.option("-p", "--proton", type=click.Path(exists=True, dir_okay=False))
 @click.option("-e", "--electron", type=click.Path(exists=True, dir_okay=False))
 @click.option("-o", "--irfoutput", type=click.Path())
-@click.option("-m", "--method", type=str)
-@click.option("-t", "--obstime", type=int)
-def main(gamma, proton, electron, irfoutput, method, obstime):
-    T_OBS = obstime * u.hour
+@click.option("-c", "--config-file", type=str)
+def main(gamma, proton, electron, irfoutput, config_file):
+    irf_output = Path(irfoutput)
+    gammapy_output = (irf_output.parent / irf_output.stem.partition(".")[0]).with_suffix(".gammapy.h5")
+
+    with Path(config_file).open() as f:
+        config = yaml.safe_load(f)
+    T_OBS = config["obstime"] * u.hour
 
     # scaling between on and off region.
     # Make off region 2 times larger than on region for better
     # background statistics
-    ALPHA = 0.2
+    ALPHA = config["alpha"]
 
     # Radius to use for calculating bg rate
-    MAX_BG_RADIUS = 1 * u.deg
+    MAX_BG_RADIUS = config["max_bg_radius"] * u.deg
     # gh cut used for first calculation of the binned theta cuts
     emin = 5 * u.GeV
     emax = 50 * u.TeV
@@ -124,174 +133,44 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
         [particles["proton"]["events"], particles["electron"]["events"]]
     )
 
-    if method == "ed":
-        # event display uses much finer bins for the theta cut than
-        # for the sensitivity
-        theta_bins = add_overflow_bins(
-            create_bins_per_decade(
-                emin,
-                emax,
-                bins_per_decade=25,
-            )
-        )
-        # gammapy doesnt like 0 or inf energies
-        theta_bins[-1] = 100 * u.TeV
-        theta_bins[0] = 1 * u.GeV
-        sensitivity_bins = add_overflow_bins(
-            create_bins_per_decade(emin, emax, bins_per_decade=5)
-        )
-        sensitivity_bins[-1] = 100 * u.TeV
-        sensitivity_bins[0] = 1 * u.GeV
-        MAX_GH_CUT_EFFICIENCY = 0.8
-        GH_CUT_EFFICIENCY_STEP = 0.01
-        INITIAL_GH_CUT_EFFICENCY = 0.4
-        INITIAL_GH_CUT = np.quantile(gammas["gh_score"], (1 - INITIAL_GH_CUT_EFFICENCY))
-        log.info(f"Using fixed G/H cut of {INITIAL_GH_CUT} to calculate theta cuts")
-        mask_theta_cuts = gammas["gh_score"] >= INITIAL_GH_CUT
-        theta_cuts = calculate_percentile_cut(
-            gammas["theta"][mask_theta_cuts],
-            gammas["reco_energy"][mask_theta_cuts],
-            bins=theta_bins,
-            min_value=0.05 * u.deg,
-            fill_value=0.32 * u.deg,
-            max_value=0.32 * u.deg,
-            percentile=68,
-        )
-        log.info("Optimizing G/H separation cut for best sensitivity")
-        gh_cut_efficiencies = np.arange(
-            GH_CUT_EFFICIENCY_STEP,
-            MAX_GH_CUT_EFFICIENCY + GH_CUT_EFFICIENCY_STEP / 2,
-            GH_CUT_EFFICIENCY_STEP,
-        )
-        sensitivity_step_2, gh_cuts = optimize_gh_cut(
-            gammas,
-            background,
-            reco_energy_bins=sensitivity_bins,
-            gh_cut_efficiencies=gh_cut_efficiencies,
-            op=operator.ge,
-            theta_cuts=theta_cuts,
-            alpha=ALPHA,
-            background_radius=MAX_BG_RADIUS,
-        )
-        for tab in (gammas, background):
-            tab["selected_gh"] = evaluate_binned_cut(
-                tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
-            )
-        theta_cuts_opt = calculate_percentile_cut(
-            gammas[gammas["selected_gh"]]["theta"],
-            gammas[gammas["selected_gh"]]["reco_energy"],
-            bins=theta_bins,
-            percentile=68,
-            fill_value=0.32 * u.deg,
-            max_value=0.32 * u.deg,
-            min_value=0.05 * u.deg,
-        )
-        gammas["selected_theta"] = evaluate_binned_cut(
-            gammas["theta"], gammas["reco_energy"], theta_cuts_opt, operator.le
-        )
-        gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
-    elif method == "loose":
-        sensitivity_bins = add_overflow_bins(
-            create_bins_per_decade(emin, emax, bins_per_decade=5)
-        )
-        sensitivity_bins[-1] = 100 * u.TeV
-        sensitivity_bins[0] = 1 * u.GeV
-        theta_bins = sensitivity_bins
-        gh_cuts = calculate_percentile_cut(
-            gammas["gh_score"],
-            gammas["reco_energy"],
-            bins=sensitivity_bins,
-            min_value=0.3,
-            fill_value=0.3,
-            max_value=1,
-            percentile=5,
-        )
-        for tab in (gammas, background):
-            tab["selected_gh"] = evaluate_binned_cut(
-                tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
-            )
+    sensitivity_bins = add_overflow_bins(
+        create_bins_per_decade(emin, emax, bins_per_decade=5)
+    )
 
-        theta_cuts_opt = calculate_percentile_cut(
-            gammas[gammas["selected_gh"]]["theta"],
-            gammas[gammas["selected_gh"]]["reco_energy"],
-            bins=theta_bins,
-            percentile=68,
-            fill_value=0.32 * u.deg,
-            max_value=0.32 * u.deg,
-            min_value=0.05 * u.deg,
+    #sensitivity_bins[-1] = 100 * u.TeV
+    #sensitivity_bins[0] = 1 * u.GeV
+    #theta_bins = sensitivity_bins
+    gh_cuts = calculate_percentile_cut(
+        gammas["gh_score"],
+        gammas["reco_energy"],
+        bins=sensitivity_bins,
+        min_value=config["gh_cuts"]["min"],
+        max_value=config["gh_cuts"]["max"],
+        fill_value=config["gh_cuts"]["fill"],
+        percentile=config["gh_cuts"]["percentile"],
+    )
+    for tab in (gammas, background):
+        tab["selected_gh"] = evaluate_binned_cut(
+            tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
         )
-        gammas["selected_theta"] = evaluate_binned_cut(
-            gammas["theta"], gammas["reco_energy"], theta_cuts_opt, operator.le
-        )
-        gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
-    elif method == "tight":
-        sensitivity_bins = add_overflow_bins(
-            create_bins_per_decade(emin, emax, bins_per_decade=5)
-        )
-        sensitivity_bins[-1] = 100 * u.TeV
-        sensitivity_bins[0] = 1 * u.GeV
-        theta_bins = sensitivity_bins
-        gh_cuts = calculate_percentile_cut(
-            gammas["gh_score"],
-            gammas["reco_energy"],
-            bins=sensitivity_bins,
-            min_value=0.3,
-            fill_value=0.5,
-            max_value=1,
-            percentile=5,
-        )
-        for tab in (gammas, background):
-            tab["selected_gh"] = evaluate_binned_cut(
-                tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
-            )
-        theta_cuts_opt = calculate_percentile_cut(
-            gammas[gammas["selected_gh"]]["theta"],
-            gammas[gammas["selected_gh"]]["reco_energy"],
-            bins=theta_bins,
-            percentile=68,
-            fill_value=0.32 * u.deg,
-            max_value=0.32 * u.deg,
-            min_value=0.05 * u.deg,
-        )
-        gammas["selected_theta"] = evaluate_binned_cut(
-            gammas["theta"], gammas["reco_energy"], theta_cuts_opt, operator.le
-        )
-        gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
-    elif method == "global_loose":
-        sensitivity_bins = add_overflow_bins(
-            create_bins_per_decade(emin, emax, bins_per_decade=5)
-        )
-        sensitivity_bins[-1] = 100 * u.TeV
-        sensitivity_bins[0] = 1 * u.GeV
-        theta_bins = sensitivity_bins
-        gh_cuts = calculate_percentile_cut(
-            gammas["gh_score"],
-            gammas["reco_energy"],
-            bins=sensitivity_bins,
-            min_value=0.2,
-            fill_value=0.5,
-            max_value=1,
-            percentile=5,
-        )
-        for tab in (gammas, background):
-            tab["selected_gh"] = evaluate_binned_cut(
-                tab["gh_score"], tab["reco_energy"], gh_cuts, operator.ge
-            )
-        # test without theta cut
-        theta_cuts_opt = calculate_percentile_cut(
-            gammas[gammas["selected_gh"]]["theta"],
-            gammas[gammas["selected_gh"]]["reco_energy"],
-            bins=theta_bins,
-            percentile=100,
-            fill_value=0.32 * u.deg,
-            max_value=0.32 * u.deg,
-            min_value=0.32 * u.deg,
-        )
-        gammas["selected_theta"] = evaluate_binned_cut(
-            gammas["theta"], gammas["reco_energy"], theta_cuts_opt, operator.le
-        )
-        gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
 
+    theta_bins = sensitivity_bins[[0,-1]] if config["theta_cuts"]["global"] else sensitivity_bins
+    theta_cuts = calculate_percentile_cut(
+        gammas[gammas["selected_gh"]]["theta"],
+        gammas[gammas["selected_gh"]]["reco_energy"],
+        bins=theta_bins,
+        percentile=config["theta_cuts"]["percentile"],
+        min_value=config["theta_cuts"]["min"] * u.deg,
+        max_value=config["theta_cuts"]["max"] * u.deg,
+        fill_value=config["theta_cuts"]["fill"] * u.deg,
+    )
+    gammas["selected_theta"] = evaluate_binned_cut(
+        gammas["theta"], gammas["reco_energy"], theta_cuts, operator.le
+    )
+    gammas["selected"] = gammas["selected_theta"] & gammas["selected_gh"]
+
+
+    # SENSITIVITY
     signal_hist_no_cuts = create_histogram_table(
         gammas, bins=sensitivity_bins
     )
@@ -302,15 +181,15 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
     signal_hist = create_histogram_table(
         gammas[gammas["selected"]], bins=sensitivity_bins
     )
+    # selected gh because a larger background region is used and then scaled 
     background_hist = estimate_background(
         background[background["selected_gh"]],
         reco_energy_bins=sensitivity_bins,
-        theta_cuts=theta_cuts_opt,
+        theta_cuts=theta_cuts,
         alpha=ALPHA,
         background_radius=MAX_BG_RADIUS,
     )
     sensitivity = calculate_sensitivity(signal_hist, background_hist, alpha=ALPHA)
-    #sensitivity_only_gh = calculate_sensitivity(signal_hist, background_hist, alpha=ALPHA)
 
     # scale relative sensitivity by Crab flux to get the flux sensitivity
     spectrum = particles["gamma"]["target_spectrum"]
@@ -322,37 +201,43 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
     hdus = [
         fits.PrimaryHDU(),
         fits.BinTableHDU(sensitivity, name="SENSITIVITY"),
-        fits.BinTableHDU(theta_cuts_opt, name="THETA_CUTS"),
+        fits.BinTableHDU(theta_cuts, name="THETA_CUTS"),
         fits.BinTableHDU(gh_cuts, name="GH_CUTS"),
     ]
 
+    gammapy_hdus = []
+    gammapy_irfs = {}
+
+    # IRFS 
     masks = {
         "": gammas["selected"],
         "_NO_CUTS": slice(None),
         "_ONLY_GH": gammas["selected_gh"],
-        "_ONLY_THETA": gammas["selected_theta"],
     }
 
     # binnings for the irfs
     true_energy_bins = add_overflow_bins(create_bins_per_decade(emin, emax, 10))
-    true_energy_bins[-1] = 100 * u.TeV
-    true_energy_bins[0] = 1 * u.GeV
+#    true_energy_bins[-1] = 100 * u.TeV
+#    true_energy_bins[0] = 1 * u.GeV
 
     reco_energy_bins = add_overflow_bins(create_bins_per_decade(emin, emax, 5))
-    reco_energy_bins[-1] = 100 * u.TeV
-    reco_energy_bins[0] = 1 * u.GeV
+#    reco_energy_bins[-1] = 100 * u.TeV
+#    reco_energy_bins[0] = 1 * u.GeV
 
-    fov_offset_bins = [0, 0.5] * u.deg
+    wobble_offset = config["wobble_offset"] * u.deg
+    fov_offset_bins = u.Quantity([wobble_offset - 0.01*u.deg, wobble_offset + 0.01 * u.deg])
+    
+    #fov_offset_bins = [0, 0.5] * u.deg
     source_offset_bins = np.arange(0, 1 + 1e-4, 1e-3) * u.deg
     energy_migration_bins = np.geomspace(0.2, 5, 100)
 
     for label, mask in masks.items():
+        # AEFF
         effective_area = effective_area_per_energy(
             gammas[mask],
             particles["gamma"]["simulation_info"],
             true_energy_bins=true_energy_bins,
         )
-
         hdus.append(
             create_aeff2d_hdu(
                 effective_area[..., np.newaxis],  # add one d for FOV offset
@@ -362,6 +247,15 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
                 TELESCOP="LST",  # gammapy????
             )
         )
+        effective_area_gammapy = create_effective_area_table_2d(
+                # add a new dimension for the single fov offset bin
+                effective_area=effective_area[..., np.newaxis],
+                true_energy_bins=true_energy_bins,
+                fov_offset_bins=fov_offset_bins,
+        )
+        gammapy_irfs["EFFECTIVE_AREA" + label] = effective_area_gammapy
+
+        # EDISP
         edisp = energy_dispersion(
             gammas[mask],
             true_energy_bins=true_energy_bins,
@@ -377,6 +271,13 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
                 extname="ENERGY_DISPERSION" + label,
             )
         )
+        edisp_gammapy = create_energy_dispersion_2d(
+            edisp,
+            true_energy_bins,
+            energy_migration_bins,
+            fov_offset_bins
+        )
+        gammapy_irfs["ENERGY_DISPERSION" + label] = edisp_gammapy
 
     bias_resolution = energy_bias_resolution(
         gammas[gammas["selected"]],
@@ -392,6 +293,8 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
         fov_offset_bins=fov_offset_bins,
         source_offset_bins=source_offset_bins,
     )
+    psf_gammapy = create_psf_3d(psf, true_energy_bins, source_offset_bins,  fov_offset_bins)
+    gammapy_irfs["PSF"] = psf_gammapy
 
     background_rate = background_2d(
         background[background["selected_gh"]],
@@ -417,7 +320,7 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
     )
     hdus.append(
         create_rad_max_hdu(
-            theta_cuts_opt["cut"][:, np.newaxis], theta_bins, fov_offset_bins
+            theta_cuts["cut"][:, np.newaxis], theta_bins, fov_offset_bins
         )
     )
     hdus.append(fits.BinTableHDU(ang_res, name="ANGULAR_RESOLUTION"))
@@ -428,7 +331,11 @@ def main(gamma, proton, electron, irfoutput, method, obstime):
 
 
     log.info("Writing outputfile")
-    fits.HDUList(hdus).writeto(irfoutput, overwrite=True)
+#    for name, component in gammapy_irfs.items()#:
+#        component.to_table().write(gammapy_output, name)
+#        gammapy_hdus.append(component.to_table_hdu())
+
+    fits.HDUList(hdus).writeto(irf_output, overwrite=True)
 
 
 if __name__ == "__main__":

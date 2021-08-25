@@ -49,7 +49,7 @@ def main(pattern, cut_file, output):
     gti_thresh = 10
     for i, f in enumerate(files):
         print(f)
-        data = read_lst_dl2(f, drop_nans=False)
+        data = QTable(read_lst_dl2(f, drop_nans=False))
         ## convert to plain numpy array
 
         times = data['time']
@@ -78,6 +78,7 @@ def main(pattern, cut_file, output):
         ngh = len(data)
         print("\nEvents in run: ", nevents)
         print('Events nach g/h cut: ', ngh, ngh/nevents*100, "%")
+        from IPython import embed; embed()
         theta_on, off_thetas = calc_wobble_thetas(data)
         passed_theta = evaluate_binned_cut(theta_on, data['reco_energy'], theta_cuts, operator.le)
         for theta in off_thetas:
@@ -229,6 +230,7 @@ def main(pattern, cut_file, output):
         #    'BACKGROUND',
         #))
 
+    from IPython import embed; embed()
     # build index file
     observation_table = QTable(
         rows=observations,

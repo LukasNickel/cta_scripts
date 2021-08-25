@@ -1,28 +1,18 @@
 import numpy as np
-import tables
-import h5py
 import pandas as pd
-from aict_tools.io import read_data
-from astropy.table import QTable, join, hstack, vstack
+from astropy.table import join, hstack
 import astropy.units as u
-from cta_tools.utils import ffill, remove_nans, add_units, rename_columns
-from cta_tools.coords.transform import get_altaz_prediction
+from cta_tools.utils import ffill, remove_nans, add_units, rename_columns, QTable
 from ctapipe.io import read_table
-from astropy.table.column import Column, MaskedColumn
 from pyirf.simulations import SimulatedEventsInfo
 from ctapipe.instrument.subarray import SubarrayDescription
-
 from astropy.time import Time
 import logging
 
 
 # wie in pyirf für event display
 def read_to_pyirf(path):
-
-    events = read_mc_dl2(path)
-    altaz_pred = get_altaz_prediction(events)
-    events["reco_alt"], events["reco_az"] = altaz_pred.alt, altaz_pred.az
-
+    events = QTable(read_mc_dl2(path))
     sim_info = read_sim_info(path)
     return events, sim_info
 
@@ -63,7 +53,7 @@ def read_dl1(path, images=False, tel_id=1, root="dl1"):
     tel = f"tel_{tel_id:03d}"
     events = read_table(path, f"/dl1/event/telescope/parameters/{tel}")
     pointing = read_table(path, f"/dl1/monitoring/telescope/pointing/{tel}")
-    trigger = read_table(path, f"/dl1/event/telescope/trigger")
+    trigger = read_table(path, "/dl1/event/telescope/trigger")
     if images:
         images = read_table(path, f"/dl1/event/telescope/images/{tel}")
         assert len(events) == len(images)
@@ -111,8 +101,8 @@ def read_lst_dl2(path, drop_nans=True, rename=True, tel_id=1):
     energy = read_table(path, f"/dl2/event/telescope/gamma_energy_prediction/{tel}")
     gh = read_table(path, f"/dl2/event/telescope/gammaness/{tel}")
     disp = read_table(path, f"/dl2/event/telescope/disp_predictions/{tel}")
-    pointing = read_table(path, f"/dl1/monitoring/telescope/pointing/tel_001")
-    trigger = read_table(path, f"/dl1/event/telescope/trigger")
+    pointing = read_table(path, "/dl1/monitoring/telescope/pointing/tel_001")
+    trigger = read_table(path, "/dl1/event/telescope/trigger")
     events = join(energy, gh, keys=["obs_id", "event_id"])
     events = join(events, disp, keys=["obs_id", "event_id"])
     # there are no magic numbers here. move on
@@ -124,12 +114,23 @@ def read_lst_dl2(path, drop_nans=True, rename=True, tel_id=1):
     events = join(events, pointing, keys=time_key, join_type="left")
     # masked columns make everything harder
     events = events.filled(np.nan)
-    events["azimuth"] = ffill(events["azimuth"])
-    events["altitude"] = ffill(events["altitude"])
+
+    events["azimuth"] = np.interp(
+        events[time_key].mjd,
+        pointing[time_key].mjd,
+        pointing["azimuth"].quantity.to_value(u.rad)
+    ) * u.rad
+    events["altitude"] = np.interp(
+        events[time_key].mjd,
+        pointing[time_key].mjd,
+        pointing["altitude"].quantity.to_value(u.rad)
+    ) * u.rad
+ 
+
+#    events["azimuth"] = ffill(events["azimuth"])
+#    events["altitude"] = ffill(events["altitude"])
     events = add_units(events)
 
-    print(events.keys())
-    # we have alt az in aict tools
     events["x_prediction"].unit = u.m
     events["y_prediction"].unit = u.m
     events["alt_prediction"].unit = u.deg
@@ -170,7 +171,7 @@ def read_sim_info(path):
 
     sim_info = SimulatedEventsInfo(
         n_showers=(
-            run_info.columns["shower_reuse"] * run_info.columns["num_showers"]# * 0.9 # hotfix 06.03 due to wrong event splitting. fix in aict tools
+            run_info.columns["shower_reuse"] * run_info.columns["num_showers"]
         ).sum(),
         energy_min=u.Quantity(e_min[0], u.TeV),
         energy_max=u.Quantity(e_max[0], u.TeV),
@@ -198,10 +199,8 @@ def read_plot_data(path, data_structure):
             result[plot_key] = {}
             for data_key, data in plot_dict.items():
                 key = f"/{plot_key}/{data_key}"
-                print(plot_key, data_key, key)
                 # structure does not need to be completely saved, eg gamma energy is only in dl2
                 if key not in store.keys():
-                    print("skip")
                     continue
                 result[plot_key][data_key] = store.get(key)
     return result

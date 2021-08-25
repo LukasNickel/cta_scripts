@@ -61,7 +61,7 @@ def calc_wobble_thetas(data, source=crab_nebula, n_off=5):
             frame=altaz,
         )
         reco_coords = SkyCoord(
-            alt=data["alt_prediction"], az=data["az_prediction"], frame=altaz
+            alt=data["reco_alt"], az=data["reco_az"], frame=altaz
         )
         icrs_preds = reco_coords.transform_to("icrs")
         icrs_pointings = pointing.transform_to('icrs')
