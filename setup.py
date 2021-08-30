@@ -14,6 +14,7 @@ setup(
             "plot_rates = cta_tools.scripts.plot_rates:main",
             "plot_time_evolution = cta_tools.scripts.plot_time_evolution:main",
             "plot_pointings = cta_tools.scripts.plot_pointings:main",
+            "plot_charges = cta_tools.scripts.plot_charges:main",
             "plot_features = cta_tools.scripts.plot_features:main",
             "mc_data_comparisons = cta_tools.scripts.mc_data_comparisons:main",
             "create_irfs = cta_tools.scripts.create_irfs:main",

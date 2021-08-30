@@ -41,6 +41,9 @@ def read_mc_dl1(path, drop_nans=True, rename=True, images=False, tel_id=1):
 
 
 def read_lst_dl1(path, drop_nans=True, rename=True, images=False, tel_id=1):
+    """
+    drop_nans and images dont play nicely together
+    """
     events = read_dl1(path, images=images, tel_id=tel_id, root="dl1")
     if drop_nans:
         events = remove_nans(events)
@@ -57,7 +60,7 @@ def read_dl1(path, images=False, tel_id=1, root="dl1"):
     if images:
         images = read_table(path, f"/dl1/event/telescope/images/{tel}")
         assert len(events) == len(images)
-        events = hstack(events, images)
+        events = join(events, images, keys=["obs_id", "event_id"], join_type="left")
       # there are no magic numbers here. move on
     events["tel_id"] = tel_id
     events = join(
