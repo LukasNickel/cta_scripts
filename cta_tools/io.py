@@ -197,7 +197,6 @@ def save_plot_data(path, data_structure):
 def read_plot_data(path, data_structure):
     result = {}
     with pd.HDFStore(path) as store:
-        print(store.keys())
         for plot_key, plot_dict in data_structure.items():
             result[plot_key] = {}
             for data_key, data in plot_dict.items():
