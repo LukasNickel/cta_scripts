@@ -16,6 +16,7 @@ setup(
             "plot_pointings = cta_tools.scripts.plot_pointings:main",
             "plot_charges = cta_tools.scripts.plot_charges:main",
             "plot_features = cta_tools.scripts.plot_features:main",
+            "plot_compare_features = cta_tools.scripts.plot_compare_features:main",
             "mc_data_comparisons = cta_tools.scripts.mc_data_comparisons:main",
             "create_irfs = cta_tools.scripts.create_irfs:main",
             "create_event_list = cta_tools.scripts.create_event_list:main",
