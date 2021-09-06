@@ -18,13 +18,14 @@ from pyirf.spectral import (
     IRFDOC_ELECTRON_SPECTRUM,
     PowerLaw,
 )
+from collections import defaultdict
 if matplotlib.get_backend() == "pgf":
     from matplotlib.backends.backend_pgf import PdfPages
 else:
     from matplotlib.backends.backend_pdf import PdfPages
 
 
-data_structure = {k:{"bins":None, "values":None} for k in ["pixels", "datamc", "time"]}
+data_structure = {k:{"bins":None, "values":None} for k in ["pixels", "datamc", "time", "surviving"]}
 
 
 
@@ -46,49 +47,66 @@ def load_data(files, cache):
         combined = vstack(list(observations.values()))
         combined["weights"] = 1 / obstime.to_value(u.s)
 
-        proton_sim_info = read_sim_info(proton_file)
-        protons = read_mc_dl1(proton_file, drop_nans=False, images=True)
+        if proton_file:
+            proton_sim_info = read_sim_info(proton_file)
+            protons = read_mc_dl1(proton_file, drop_nans=False, images=True)
 
-        protons["weights"] = calculate_event_weights(
-            protons["true_energy"],
-            IRFDOC_PROTON_SPECTRUM,
-            PowerLaw.from_simulation(proton_sim_info, 1*u.s),
-        )
-        electron_sim_info = read_sim_info(electron_file)
-        electrons = read_mc_dl1(electron_file, drop_nans=False, images=True)
-        electrons["weights"] = calculate_event_weights(
-            electrons["true_energy"],
-            IRFDOC_ELECTRON_SPECTRUM,
-            PowerLaw.from_simulation(electron_sim_info, 1*u.s),
-        )
-        background = vstack([protons, electrons])
+            protons["weights"] = calculate_event_weights(
+                protons["true_energy"],
+                IRFDOC_PROTON_SPECTRUM,
+                PowerLaw.from_simulation(proton_sim_info, 1*u.s),
+            )
+        if electron_file:
+            electron_sim_info = read_sim_info(electron_file)
+            electrons = read_mc_dl1(electron_file, drop_nans=False, images=True)
+            electrons["weights"] = calculate_event_weights(
+                electrons["true_energy"],
+                IRFDOC_ELECTRON_SPECTRUM,
+                PowerLaw.from_simulation(electron_sim_info, 1*u.s),
+            )
+        if protons and electrons:
+            background = vstack([protons, electrons])
+        elif protons:
+            background = protons
+        elif electrons:
+            background = electrons
+        else:
+            background = None
 
-        ## pixels
-        # This plot is not super helpful, can we do better?
         max_ = np.percentile(combined["image"], 99)
         min_ = np.percentile(combined["image"], 1)
-        bins = np.linspace(min_, max_, 30)
-        count_df = pd.DataFrame()
+        
+        pixel_values = defaultdict(list)
         for pixel, values in enumerate(combined["image"].T) :
-            count_df[pixel], _ = np.histogram(values, bins=bins)
+            pixel_values["std"].append(np.std(values))
+            pixel_values["mean"].append(np.mean(values))
+            pixel_values["median"].append(np.median(values))
+            per_25 = np.percentile(values, 25)
+            per_75 = np.percentile(values, 75)
+            iqr = per_75 - per_25
+            pixel_values["25"].append(per_25)
+            pixel_values["75"].append(per_75)
+            pixel_values["iqr"].append(iqr)
+            pixel_values["min"].append(np.min(values))
+            pixel_values["max"].append(np.max(values))
         plot_values["pixels"] = {
-            "bins": pd.Series(bins),
-            "values": count_df,
+            "bins": pd.Series(),
+            "values": pd.DataFrame(pixel_values),
         }
-
-        ## datamc
-        datamc_bins = np.linspace(
-            min(min_, np.percentile(background["image"], 1)),
-            max(max_, np.percentile(background["image"], 99)),
-            30,
-        )
-        datamc_df = pd.DataFrame()
-        datamc_df["data"], _ = np.histogram(combined["image"], bins=datamc_bins)
-        datamc_df["mc"], _ = np.histogram(background["image"], bins=datamc_bins)
-        plot_values["datamc"] = {
-            "bins": pd.Series(datamc_bins),
-            "values": datamc_df,
-        }
+        if background:
+            ## datamc
+            datamc_bins = np.linspace(
+                min(min_, np.percentile(background["image"], 1)),
+                max(max_, np.percentile(background["image"], 99)),
+                30,
+            )
+            datamc_df = pd.DataFrame()
+            datamc_df["data"], _ = np.histogram(combined["image"], bins=datamc_bins)
+            datamc_df["mc"], _ = np.histogram(background["image"], bins=datamc_bins)
+            plot_values["datamc"] = {
+                "bins": pd.Series(datamc_bins),
+                "values": datamc_df,
+            }
 
         ## time
         combined["delta_t_sec"] = (combined["time"] - combined["time"][0]).sec
@@ -116,19 +134,50 @@ def load_data(files, cache):
             "bins": pd.Series(time_bins),
             "values": time_df,
         }
+        
+        # fraction surviving events
+        combined["size"] = combined["image"].sum(axis=1)
+        combined["survived"] = combined["image_mask"].sum(axis=1) >= 0
+        size_bins = np.logspace(
+            np.log10(1),
+            np.log10(combined["size"].max()),
+            100
+        )
+        fraction_df = pd.DataFrame()
+        fraction = []
+        indices = np.digitize(combined["size"], size_bins)
+        for b in range(100):
+            bin_index=b+1
+            group = combined[indices == bin_index]
+            fraction.append(np.mean(group["survived"]))
+        fraction_df["data"] = fraction #np.histogram(combined["survived"], bins=size_bins)
+        if background:
+            background["size"] = background["image"].sum(axis=1)
+            background["survived"] = background["image_mask"].sum(axis=1) >= 0
+            fraction_mc = []
+            indices = np.digitize(background["size"], size_bins)
+            for b in range(100):
+                bin_index=b+1
+                group = background[indices == bin_index]
+                fraction_mc.append(np.mean(group["survived"]))
+            fraction_df["mc"] = fraction_mc #np.histogram(combined["survived"], bins=size_bins)
+
+        plot_values["surviving"] = {
+            "bins": pd.Series(size_bins),
+            "values": fraction_df,
+        }
+
         save_plot_data(cache, plot_values)
+
     return plot_values
-
-
-
 
 
 @click.argument(
     "input_files",
     nargs=-1,
 )
-@click.option("--protons", "-p", type=click.Path(exists=True))
-@click.option("--electrons", "-e", type=click.Path(exists=True))
+@click.option("--protons", "-p", type=click.Path(exists=True), default=False)
+@click.option("--electrons", "-e", type=click.Path(exists=True), default=False)
 @click.option("--output", "-o", type=click.Path(exists=False, dir_okay=False))
 @click.command()
 def main(
@@ -144,26 +193,78 @@ def main(
     figs = []
     # pixels
     fig, ax = plt.subplots()
-    for p in plot_data["pixels"]["values"].keys():
-        ax.hist(
-            plot_data["pixels"]["bins"][:-1],
-            bins=plot_data["pixels"]["bins"],
-            weights=plot_data["pixels"]["values"][p],
-        )
+    ax.plot(
+        plot_data["pixels"]["values"].index, 
+        plot_data["pixels"]["values"]["median"],
+        "k.",
+    )
+    ax.plot(
+        plot_data["pixels"]["values"].index, 
+        plot_data["pixels"]["values"]["25"],
+        "r--",
+    )
+    ax.plot(
+        plot_data["pixels"]["values"].index, 
+        plot_data["pixels"]["values"]["75"],
+        "r--",
+    )
+    ax.plot(
+        plot_data["pixels"]["values"].index, 
+        plot_data["pixels"]["values"]["max"],
+        "b.",
+    )
+    ax.plot(
+        plot_data["pixels"]["values"].index, 
+        plot_data["pixels"]["values"]["min"],
+        "g.",
+    )
+    ax.set_ylim(
+        min(plot_data["pixels"]["values"]["25"] - 3*plot_data["pixels"]["values"]["iqr"]),
+        max(plot_data["pixels"]["values"]["75"] + 3*plot_data["pixels"]["values"]["iqr"]),
+    )
     figs.append(fig)
     
+    # if mc is there!
     # datamc
     fig = compare_rates(
         plot_data["datamc"]["values"]["data"].values,
         plot_data["datamc"]["values"]["mc"].values,
         plot_data["datamc"]["bins"].values,
+        l1="data",
+        l2="mc",
     )
+    # title and axes labels
     figs.append(fig)
 
     # time
     fig, ax = plt.subplots()
     plot_binned_time_evolution(plot_data["time"]["values"], ax=ax)
+    ax.set_title("Mean charge over time")
+    ax.set_ylabel("charge [pe]")
     figs.append(fig)
+
+
+    # fraction
+    fig, ax = plt.subplots()
+    ax.plot(
+        plot_data["surviving"]["bins"],#["center"], 
+        plot_data["surviving"]["values"]["data"],
+        label="data",
+    )
+    if "mc" in plot_data["surviving"]["values"].keys():
+        ax.plot(
+            plot_data["surviving"]["bins"],#["center"], 
+            plot_data["surviving"]["values"]["data"],
+            label="mc",
+        )
+    ax.legend()
+    ax.set_xscale("log")
+    ax.set_title("Fraction surviving events")
+    ax.set_xlabel("Size")
+    figs.append(fig)
+
+
+
     if output is None:
         plt.show()
     else:
