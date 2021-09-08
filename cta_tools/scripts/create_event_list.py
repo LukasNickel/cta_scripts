@@ -1,5 +1,8 @@
 import numpy as np
-from cta_tools.reco.wobble import wobble_predictions_lst
+from cta_tools.reco.theta import calc_wobble_thetas
+from cta_tools.coords.transform import get_icrs_pointings, get_icrs_prediction
+from cta_tools.io import read_lst_dl2
+from cta_tools.utils import *
 from astropy.io import fits
 from pathlib import Path
 from astropy.table import QTable
@@ -11,17 +14,18 @@ from aict_tools.io import read_data
 import click
 import astropy.units as u
 from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
+
 erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
 
 
 DEFAULT_HEADER = fits.Header()
-DEFAULT_HEADER["CREATOR"] = f"Lukas Nickel"
+DEFAULT_HEADER["CREATOR"] = "Lukas Nickel"
 # fmt: off
 DEFAULT_HEADER["HDUDOC"] = (
     "https://github.com/open-gamma-ray-astro/gamma-astro-data-formats"
 )
 DEFAULT_HEADER["HDUVERS"] = "0.2"
-DEFAULT_HEADER["HDUCLASS"] = "GADF"
+DEFAULT_HEADER["HDUCLASS"] = "GAdata"
 
 
 @click.command()
@@ -31,131 +35,132 @@ DEFAULT_HEADER["HDUCLASS"] = "GADF"
 def main(pattern, cut_file, output):
     files = Path(pattern).parent.glob(pattern.split('/')[-1])
     gh_cuts = QTable.read(cut_file, hdu="GH_CUTS")
-    theta_cuts = QTable.read(cut_file, hdu="THETA_CUTS_OPT")
+    theta_cuts = QTable.read(cut_file, hdu="THETA_CUTS")
 
     observations = []
     index = []
+    ontimes = []
+    livetimes = []
+    timerefs = []
+    starts = []
+    stops = []
+
+    # pretty random, might be too long
+    gti_thresh = 10
     for i, f in enumerate(files):
-        df = read_data(f, 'events')
-        tstart = df['dragon_time'].min()
-        tstop = df['dragon_time'].max()
-        df.dropna(
-            subset=['gamma_energy_prediction', 'gammaness', 'disp_prediction'],
-            inplace=True
-        )
-        nevents = len(df)
+        print(f)
+        data = QTable(read_lst_dl2(f, drop_nans=False))
+        ## convert to plain numpy array
+
+        times = data['time']
+        tstart = times[0]
+        tstop = times[-1]
+        starts.append(tstart)
+        stops.append(tstop)
+        ontime = (tstop - tstart).to_value(u.s)
+
+        # this is wrong due to cuts applied!
+        # need to add these to the dl1 file!
+        # directly from lstchain pr 593
+        # using method from PR#566
+        deltaT = np.diff(times.mjd) # this is much faster using only the values
+        deltaT = deltaT[(deltaT > 0) & (deltaT < 0.002)]
+        rate = 1 / np.mean(deltaT)
+        dead_time = np.amin(deltaT)
+        dead_corr = 1 / (1 + rate * dead_time)
+        livetime = ontime * dead_corr
+        ontimes.append(ontime)
+        livetimes.append(livetime)
+
+        nevents = len(data)
+        passed_gh = evaluate_binned_cut(data['gh_score'], data['reco_energy'], gh_cuts, operator.ge)
+        data = data[passed_gh]
+        ngh = len(data)
         print("\nEvents in run: ", nevents)
-        df['selected'] = True
-        gh_mask = evaluate_binned_cut(
-            df['gammaness'],
-            u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-            gh_cuts,
-            operator.ge
-        )
-        df['selected'] &= gh_mask
-        df = df[df['selected']]
-        ngh = len(df)
         print('Events nach g/h cut: ', ngh, ngh/nevents*100, "%")
+        from IPython import embed; embed()
+        theta_on, off_thetas = calc_wobble_thetas(data)
+        passed_theta = evaluate_binned_cut(theta_on, data['reco_energy'], theta_cuts, operator.le)
+        for theta in off_thetas:
+            passed_theta |= evaluate_binned_cut(theta, data['reco_energy'], theta_cuts, operator.le)
 
-        pred = wobble_predictions_lst(df)
-        df['ra_pred'], df['dec_pred'] = pred[0], pred[1]
-        df['theta_on'], theta_offs = pred[2], pred[3]
-        df['ra_pnt'], df['dec_pnt'] = pred[4], pred[5]
-        theta_mask = evaluate_binned_cut(
-            u.Quantity(df['theta_on'], u.deg, copy=False),
-            u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-            theta_cuts,
-            operator.le
-        )
-        ebins = np.append(theta_cuts["low"], theta_cuts["high"][-1])
-        bin_index = calculate_bin_indices(
-            u.Quantity(
-                df['gamma_energy_prediction'].values,
-                u.TeV,
-                copy=False),
-            ebins
-        )
-        df['theta_cut_value'] = theta_cuts["cut"][bin_index]
-        event_columns = {
-            'ra_pred': 'RA',
-            'dec_pred': 'DEC',
-            'event_id': 'EVENT_ID',
-            'dragon_time': 'TIME',
-            'gamma_energy_prediction': 'ENERGY',
-            'theta_on': 'THETA_ON',
-            'theta_cut_value': 'THETA_CUT_VALUE',
-        }
-        for i, thetas in enumerate(theta_offs):
-            df[f'theta_off{i}'] = thetas
-            theta_mask |= evaluate_binned_cut(
-                u.Quantity(df[f'theta_off{i}'], u.deg, copy=False),
-                u.Quantity(df['gamma_energy_prediction'].values, u.TeV, copy=False),
-                theta_cuts,
-                operator.le
-            )
-            event_columns[f'theta_off{i}'] = f'THETA_OFF{i}'
-
-        df = df[theta_mask]
-        ntheta = len(df)
+        data['PASSED_THETA_CUT'] = passed_theta
+        #data = data[passed_theta]
+        ntheta = len(data)
         print("Events nach theta cut: ", ntheta, ntheta/nevents*100, "%")
-        pointing_columns_old = ['dragon_time', 'ra_pnt', 'dec_pnt']
-        pointing_columns_new = ['TIME', 'RA_PNT', 'DEC_PNT']
 
-        df_events = df[event_columns.keys()]
-        df_events.rename(columns=event_columns, inplace=True)
+        # 
+        data = remove_nans(data)
+        print('Events after nan dropping:', len(data))
+ 
 
-        df_pointings = df[pointing_columns_old]
-        df_pointings.columns = pointing_columns_new
+        # this is not super efficient 
+        pointing_icrs = get_icrs_pointings(data)
+        predictions_icrs = get_icrs_prediction(data)
+        data = rename_columns(data, 'ogadf')
+        data['RA'] = predictions_icrs.ra
+        data['DEC'] = predictions_icrs.dec
+        data['RA_PNT'] = pointing_icrs.ra
+        data['DEC_PNT'] = pointing_icrs.dec
+        
+        
 
-        df_gti = pd.DataFrame()
+        selected_times = data['TIME']
+        mjd_offset = selected_times[0]
+        offset_times = (selected_times - mjd_offset).to(u.s)
+        int_mjd_offset = np.floor(mjd_offset.mjd)
+        float_mjd_offset = (mjd_offset.value - int_mjd_offset)
+        
+        timerefs.append(mjd_offset)
 
-        df_gti['START'] = [tstart]
-        df_gti['STOP'] = [tstop]
-
-        events = QTable.from_pandas(df_events)
-        events['RA'].unit = u.deg
-        events['DEC'].unit = u.deg
-        events['TIME'].unit = u.s
-        events['ENERGY'].unit = u.TeV
+        #offset_times *= u.s
+        events = data[['RA', 'DEC', 'ENERGY', 'PASSED_THETA_CUT']]
+        # can gammapy work with this or do we need to convert?
+        events['TIME'] = offset_times
         event_header = DEFAULT_HEADER.copy()
         event_header['HDUCLAS1'] = 'EVENTS'
-        event_header['OBS_ID'] = df['obs_id'].iloc[0]
-        event_header['TSTART'] = tstart
-        event_header['TSTOP'] = tstop
+        event_header['OBS_ID'] = data['obs_id'][0]
+        event_header['TSTART'] = offset_times[0].to_value(u.s)
+        event_header['TSTOP'] = offset_times[-1].to_value(u.s)
 
-        event_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
-        event_header['MJDREFF'] = 0.
-        event_header['ONTIME'] = tstop - tstart
-        event_header['LIVETIME'] = event_header['ONTIME']
-        event_header['DEADC'] = 1.
+        event_header['MJDREFI'] = int_mjd_offset
+        event_header['MJDREFF'] = float_mjd_offset
+        event_header['TIMEUNIT'] = 's'
+        event_header['TIMESYS'] = 'tai'
+        event_header['TIMEREF'] = 'TOPOCENTER'
+        event_header['ONTIME'] = ontime
+        event_header['DEADC'] = dead_corr
+        event_header['LIVETIME'] = event_header["DEADC"]*event_header["ONTIME"]
         # assuming constant pointing
-        event_header['RA_PNT'] = df_pointings['RA_PNT'].iloc[0]
-        event_header['DEC_PNT'] = df_pointings['DEC_PNT'].iloc[0]
+        event_header['RA_PNT'] = pointing_icrs[0].ra.deg
+        event_header['DEC_PNT'] = pointing_icrs[0].dec.deg
         event_header['EQUINOX'] = '2000.0'
         event_header['RADECSYS'] = 'FK5'  # ???
         event_header['ORIGIN'] = 'CTA'
         event_header['TELESCOP'] = 'LST1'
         event_header['INSTRUME'] = 'LST1'
 
-        gtis = QTable.from_pandas(df_gti)
-        gtis['START'].unit = u.s
-        gtis['STOP'].unit = u.s
+        #  everythin is a gti for now
+        gtis = QTable()
+        gtis['START'] = [offset_times[0]]
+        gtis['STOP'] = [offset_times[-1]]
         gti_header = DEFAULT_HEADER.copy()
-        gti_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
-        gti_header['MJDREFF'] = 0.
+        gti_header['MJDREFI'] = int_mjd_offset
+        gti_header['MJDREFF'] = float_mjd_offset
         gti_header['TIMEUNIT'] = 's'
-        gti_header['TIMESYS'] = 'UTC'  # ??
-        gti_header['TIMEREF'] = 'TOPOCENTER'  # ??
+        gti_header['TIMESYS'] = 'tai'
+        gti_header['TIMEREF'] = 'TOPOCENTER'
 
-        pointings = QTable.from_pandas(df_pointings)
-        pointings['RA_PNT'].unit = u.deg
-        pointings['DEC_PNT'].unit = u.deg
-        pointings['TIME'].unit = u.s
+        pointings = data[['RA_PNT', 'DEC_PNT']]
+        pointings['TIME'] = offset_times
         pointing_header = gti_header.copy()
         pointing_header['OBSGEO-L'] = -17.89139
         pointing_header['OBSGEO-B'] = 28.76139
         pointing_header['OBSGEO-H'] = 2184.
-
+        pointing_header['GEOLON'] = -17.89139
+        pointing_header['GEOLAT'] = 28.76139
+        pointing_header['ALTITUDE'] = 2184.
+        
         hdus = [
             fits.PrimaryHDU(),
             fits.BinTableHDU(events, header=event_header, name="EVENTS"),
@@ -164,44 +169,44 @@ def main(pattern, cut_file, output):
         ]
 
         fits.HDUList(hdus).writeto(
-            Path(output).parent/f'{df["obs_id"].iloc[0]}.fits.gz',
+            Path(output).parent/f'{data["obs_id"][0]}.fits.gz',
             overwrite=True
         )
         observations.append((
-            df['obs_id'].iloc[0],
-            df_pointings['RA_PNT'].iloc[0],
-            df_pointings['DEC_PNT'].iloc[0],
+            data['obs_id'][0],
+            pointings['RA_PNT'][0].to_value(u.deg),
+            pointings['DEC_PNT'][0].to_value(u.deg),
             tstart,
             tstop,
-            1.
+            livetime/ontime
         ))
 
         index.append((
-            df['obs_id'].iloc[0],
+            data['obs_id'][0],
             'events',
             'events',
             '.',
-            f'{df["obs_id"].iloc[0]}.fits.gz',
+            f'{data["obs_id"][0]}.fits.gz',
             'EVENTS'
         ))
         index.append((
-            df['obs_id'].iloc[0],
+            data['obs_id'][0],
             'gti',
             'gti',
             '.',
-            f'{df["obs_id"].iloc[0]}.fits.gz',
+            f'{data["obs_id"][0]}.fits.gz',
             'GTI'
         ))
         index.append((
-            df['obs_id'].iloc[0],
+            data['obs_id'][0],
             'aeff',
             'aeff_2d',
             '.',
             'irfs.fits.gz',
-            'EFFECTIVE_AREA'
+            'EFFECTIVE_AREA_ONLY_GH'
         ))
         index.append((
-            df['obs_id'].iloc[0],
+            data['obs_id'][0],
             'psf',
             'psf_table',
             '.',
@@ -209,37 +214,48 @@ def main(pattern, cut_file, output):
             'PSF'
         ))
         index.append((
-            df['obs_id'].iloc[0],
+            data['obs_id'][0],
             'edisp',
             'edisp_2d',
             '.',
             'irfs.fits.gz',
-            'ENERGY_DISPERSION'
+            'ENERGY_DISPERSION_ONLY_GH'
         ))
-        index.append((
-            df['obs_id'].iloc[0],
-            'bkg',
-            'bkg_2d',
-            '.',
-            f'{df["obs_id"].iloc[0]}.fits.gz',
-            'BACKGROUND'
-        ))
+        #index.append((
+        #    data['obs_id'][0],
+        #    'bkg',
+        #    'bkg_2d',
+        #    '.',
+        #    f'{data["obs_id"][0]}.fits.gz',
+        #    'BACKGROUND',
+        #))
 
+    from IPython import embed; embed()
     # build index file
     observation_table = QTable(
         rows=observations,
         names=['OBS_ID', 'RA_PNT', 'DEC_PNT', 'TSTART', 'TSTOP', 'DEADC'],
-        units=['', 'deg', 'deg', 's', 's', '']
+        #units=['', 'deg', 'deg', 's', 's', '']
     )
+    #from IPython import embed; embed()
+    ref = min(timerefs)
+    observation_table['TSTART'] -= ref
+    observation_table['TSTART'] = observation_table['TSTART'].to(u.s)
+    observation_table['TSTOP'] -= ref
+    observation_table['TSTOP'] = observation_table['TSTOP'].to(u.s)
     obs_header = DEFAULT_HEADER.copy()
     obs_header['HDUCLAS1'] = 'INDEX'
     obs_header['HDUCLAS2'] = 'OBS'
     obs_header['TELESCOP'] = 'LST1'
-    obs_header['MJDREFI'] = 40587  # ref time is this correct? 01.01.1970?
-    obs_header['MJDREFF'] = 0.
-    obs_header['ONTIME'] = tstop - tstart
-    obs_header['LIVETIME'] = event_header['ONTIME']
-    obs_header['DEADC'] = 1.
+    obs_header['MJDREFI'] = np.floor(ref.value)
+    obs_header['MJDREFF'] = ref.value - obs_header['MJDREFI']
+    obs_header['TIMEUNIT'] = 's'
+    obs_header['TIMESYS'] = 'tai'
+    obs_header['TIMEREF'] = 'TOPOCENTER'
+    obs_header['ONTIME'] = sum(ontimes)
+    obs_header['LIVETIME'] = sum(livetimes)
+    obs_header['DEADC'] = (sum(livetimes) / sum(ontimes))
+
     hdus = [
         fits.PrimaryHDU(),
         fits.BinTableHDU(observation_table, header=obs_header, name="OBS_INDEX"),
