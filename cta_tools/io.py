@@ -6,6 +6,7 @@ from cta_tools.utils import ffill, remove_nans, add_units, rename_columns, QTabl
 from ctapipe.io import read_table
 from pyirf.simulations import SimulatedEventsInfo
 from ctapipe.instrument.subarray import SubarrayDescription
+from lstchain.io import read_dl2_params, read_mc_dl2_to_QTable
 from astropy.time import Time
 import logging
 
@@ -61,6 +62,8 @@ def read_dl1(path, images=False, tel_id="LST_LSTCam", root="dl1"):
     else:
         tel = tel_id
     events = read_table(path, f"/dl1/event/telescope/parameters/{tel}")
+    # lstchain has a different scheme, lets just not use these for now
+    return events
     pointing = read_table(path, f"/dl1/monitoring/telescope/pointing/{tel}")
     trigger = read_table(path, "/dl1/event/telescope/trigger")
     if images:
