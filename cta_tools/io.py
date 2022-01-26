@@ -10,6 +10,9 @@ from astropy.time import Time
 import logging
 
 
+log = logging.getLogger(__name__)
+
+
 # wie in pyirf für event display
 def read_to_pyirf(path):
     events = QTable(read_mc_dl2(path))
@@ -28,7 +31,7 @@ def read_mc_dl2(path, drop_nans=True, rename=True):
     return table
 
 
-def read_mc_dl1(path, drop_nans=True, rename=True, images=False, tel_id=1):
+def read_mc_dl1(path, drop_nans=True, rename=True, images=False, tel_id="LST_LSTCam"):
     events = read_dl1(path, images=images, tel_id=tel_id, root="simulation")
     if drop_nans:
         events = remove_nans(events)
@@ -40,7 +43,7 @@ def read_mc_dl1(path, drop_nans=True, rename=True, images=False, tel_id=1):
     return events
 
 
-def read_lst_dl1(path, drop_nans=True, rename=True, images=False, tel_id=1):
+def read_lst_dl1(path, drop_nans=True, rename=True, images=False, tel_id="LST_LSTCam"):
     """
     drop_nans and images dont play nicely together
     """
@@ -52,8 +55,11 @@ def read_lst_dl1(path, drop_nans=True, rename=True, images=False, tel_id=1):
     return events
 
 
-def read_dl1(path, images=False, tel_id=1, root="dl1"):
-    tel = f"tel_{tel_id:03d}"
+def read_dl1(path, images=False, tel_id="LST_LSTCam", root="dl1"):
+    if isinstance(tel_id, int):
+        tel = f"tel_{tel_id:03d}"
+    else:
+        tel = tel_id
     events = read_table(path, f"/dl1/event/telescope/parameters/{tel}")
     pointing = read_table(path, f"/dl1/monitoring/telescope/pointing/{tel}")
     trigger = read_table(path, "/dl1/event/telescope/trigger")
@@ -96,11 +102,14 @@ def read_dl1(path, images=False, tel_id=1, root="dl1"):
     return events
 
 
-def read_lst_dl2(path, drop_nans=True, rename=True, tel_id=1):
+def read_lst_dl2(path, drop_nans=True, rename=True, tel_id="LST_LSTCam"):
     """
     lst1 only right now. could loop over tels or smth
     """
-    tel = f"tel_{tel_id:03d}"
+    if isinstance(tel_id, int):
+        tel = f"tel_{tel_id:03d}"
+    else:
+        tel = tel_id
     energy = read_table(path, f"/dl2/event/telescope/gamma_energy_prediction/{tel}")
     gh = read_table(path, f"/dl2/event/telescope/gammaness/{tel}")
     disp = read_table(path, f"/dl2/event/telescope/disp_predictions/{tel}")
@@ -206,6 +215,14 @@ def load_dl2_events(path):
     events = None
 
 
+def save_plot_data(path, data_structure):
+    with pd.HDFStore(path) as store:
+        for plot_key, plot_dict in data_structure.items():
+            for data_key, data in plot_dict.items():
+                key = f"{plot_key}/{data_key}"
+                store.put(key, data)
+
+
 def read_plot_data(path, data_structure):
     result = {}
     with pd.HDFStore(path) as store:
@@ -218,3 +235,23 @@ def read_plot_data(path, data_structure):
                     continue
                 result[plot_key][data_key] = store.get(key)
     return result
+
+def read_irf_files(path):
+    """Read the irf file created by lstchain. Wrapper for some QTable calls"""
+    hdus = {
+        "aeff": "EFFECTIVE AREA",
+        "edisp": "ENERGY DISPERSION",
+        "psf": "PSF",
+        "bkg": "BACKGROUND",
+    }
+    result = {}
+    for name, hdu_key in hdus.items():
+        # TODO: Debug possible errors, log and do stuff
+        try:
+            irf = QTable.read(path, hdu=hdu_key)[0]
+        except Exception as e:
+            irf = None
+            log.warning(e)
+        result[name] = irf
+    return result
+    
