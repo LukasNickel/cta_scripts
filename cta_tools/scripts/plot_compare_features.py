@@ -21,10 +21,11 @@ if matplotlib.get_backend() == "pgf":
 else:
     from matplotlib.backends.backend_pdf import PdfPages
 import click
+from cta_tools.logging import setup_logging
 
 
-log = logging.getLogger(__name__)
-log.setLevel("INFO")
+log = setup_logging()
+
 
 logx = [
     "hillas_intensity",

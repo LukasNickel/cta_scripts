@@ -50,6 +50,7 @@ def load_data(files, cache):
         for f in tqdm(observation_files):
             data = read_lst_dl1(f)
             observations[data[0]["obs_id"]] = data
+            print(data.keys())
             run_time = (data["time"][-1] - data["time"][0]).to(u.s)
             obstime += run_time
         combined = vstack(list(observations.values()))

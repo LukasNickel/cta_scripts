@@ -32,15 +32,16 @@ if matplotlib.get_backend() == "pgf":
 else:
     from matplotlib.backends.backend_pdf import PdfPages
 import click
+from cta_tools.logging import setup_logging
+
+
+log = setup_logging()
 plt.rcParams.update({'figure.max_open_warning': 0})
 
 
-logging.basicConfig()
-log = logging.getLogger(__name__)
-log.setLevel("INFO")
-
 logx = [
     "hillas_intensity",
+    "intensity",
     "reco_energy",
 ]
 linx = [
@@ -48,8 +49,13 @@ linx = [
     "hillas_width",
     "hillas_skewness",
     "hillas_kurtosis",
+    "length",
+    "width",
+    "skewness",
+    "kurtosis",
     "timing_slope",
     "timing_intercept",
+    "time_gradient",
     "leakage_pixels_width_1",
     "leakage_intensity_width_2",
     "leakage_pixels_width_2",
@@ -93,7 +99,7 @@ def load_run(path):
     except:
         log.info("Only using dl1 data")
     log.info(f"Loading of {path} finished")
-    print(f"Loading of {path} finished")
+    log.info(f"{len(data)} events")
     return data
 
 
@@ -111,17 +117,19 @@ def load_mc(path, obstime, spectrum):
             continue
     except:
         log.info("Only using dl1 data")
-    log.info(f"Loading of {path} finished")
     data["weights"] = calculate_event_weights(
         data["true_energy"],
         spectrum,
         PowerLaw.from_simulation(sim_info, obstime),
     )
+    log.info(f"Loading of {path} finished")
+    log.info(f"{len(data)} events")
     return data
 
 
 def plot(data, feature, keys, logx=True):
     fig, ax = plt.subplots()
+    log.info(f"Creating plot with keys: {keys} for feature {feature}")
     for key in keys:
         ax.hist(
             data[feature]["bins"][:-1],
@@ -197,9 +205,10 @@ def main(
             gammas = None
 
         for feature in logx:
-            plot_data[feature]["bins"] = pd.Series()
+            plot_data[feature]["bins"] = pd.Series(dtype=np.float64)
             plot_data[feature]["values"] = pd.DataFrame()
             if feature not in combined.keys():
+                log.debug(f"{feature} missing in keys: {combined.keys()}")
                 continue
 
             if binsizes:
@@ -234,9 +243,11 @@ def main(
                     bins=bins
                 )
             for run_data in runs:
-                run_id = run[0]["obs_id"]
+                run_id = run_data[0]["obs_id"]
+                log.info(f"Filling feature df for run {run_id}")
                 # why would that happen?
                 if feature not in run_data.keys():
+                    log.debug(f"{feature} missing in keys: {run_data.keys()}")
                     continue
                 feature_df[run_id], _ = np.histogram(
                     run_data[feature],
@@ -245,9 +256,10 @@ def main(
             plot_data[feature]["values"] = feature_df
 
         for feature in linx:
-            plot_data[feature]["bins"] = pd.Series()
+            plot_data[feature]["bins"] = pd.Series(dtype=np.float64)
             plot_data[feature]["values"] = pd.DataFrame()
             if feature not in combined.keys():
+                log.debug(f"{feature} missing in keys: {combined.keys()}")
                 continue
             if binsizes:
                 if feature in binsizes:
@@ -281,9 +293,11 @@ def main(
                     bins=bins
                 )
             for run_data in runs:
-                run_id = run[0]["obs_id"]
+                run_id = run_data[0]["obs_id"]
+                log.debug(f"{feature} missing in keys: {run_data.keys()}")
                 # why would that happen?
                 if feature not in run_data.keys():
+                    log.warning(f"{feature} missing in keys: {run_data.keys()}")
                     continue
                 feature_df[run_id], _ = np.histogram(
                     run_data[feature],
@@ -295,12 +309,14 @@ def main(
 
     figs = []
 
-    from IPython import embed; embed()
     datamc = ["observations"]       
-    if "background" in plot_data["hillas_length"]["values"]:
+    if background:
         datamc.append("background")
-    if "gammas" in plot_data["hillas_length"]["values"]:
+    if gammas:
         datamc.append("gammas")
+    log.info(f"datamc: {datamc}")
+    log.info(f"all: {set(plot_data[feature]['values'].keys())}")
+    log.info(f"runs: {set(plot_data[feature]['values'].keys()) - set(datamc)}")
     for feature in logx:
         log.info(feature)
         if not plot_data[feature]["values"].empty:

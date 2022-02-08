@@ -4,6 +4,7 @@ from cta_tools.reco.theta import calc_wobble_thetas
 from cta_tools.coords.transform import get_icrs_pointings, get_icrs_prediction
 from cta_tools.io import read_lst_dl2
 from cta_tools.utils import *
+from cta_tools.logging import setup_logging
 from astropy.io import fits
 from pathlib import Path
 from astropy.table import QTable
@@ -20,6 +21,7 @@ from astropy.time import Time, TimeDelta
 from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
 
 erfa_astrom.set(ErfaAstromInterpolator(10 * u.min))
+log = setup_logging()
 
 
 @click.command()
@@ -34,7 +36,6 @@ def main(path):
         delta_t = TimeDelta(
             np.insert(np.diff(data["time"].mjd), 0, 0), format="jd", scale="tai"
         )
-        print(delta_t)
         dt = pd.DataFrame(
             {
                 "delta_t": delta_t.to(u.s),

@@ -7,7 +7,6 @@ from astropy import table
 from pathlib import Path
 import astropy.units as u
 from astropy.io import fits
-
 from pyirf.binning import (
     create_bins_per_decade,
     add_overflow_bins,
@@ -17,7 +16,6 @@ from pyirf.cuts import calculate_percentile_cut, evaluate_binned_cut
 from pyirf.sensitivity import calculate_sensitivity, estimate_background
 from pyirf.utils import calculate_theta, calculate_source_fov_offset
 from pyirf.benchmarks import energy_bias_resolution, angular_resolution
-
 from pyirf.spectral import (
     calculate_event_weights,
     PowerLaw,
@@ -26,7 +24,6 @@ from pyirf.spectral import (
     IRFDOC_ELECTRON_SPECTRUM,
 )
 from pyirf.cut_optimization import optimize_gh_cut
-
 from pyirf.irf import (
     effective_area_per_energy,
     energy_dispersion,
@@ -38,7 +35,6 @@ from pyirf.gammapy import (
     create_energy_dispersion_2d,
     create_effective_area_table_2d,
 )
-
 from pyirf.io import (
     create_aeff2d_hdu,
     create_psf_table_hdu,
@@ -46,10 +42,11 @@ from pyirf.io import (
     create_rad_max_hdu,
     create_background_2d_hdu,
 )
-
 from cta_tools.io import read_to_pyirf
+from cta_tools.logging import setup_logging
 
-log = logging.getLogger("pyirf")
+
+log = setup_logging()
 
 
 def get_global_cut_table(cut_value):

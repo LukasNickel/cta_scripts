@@ -6,6 +6,10 @@ from gammapy.analysis import Analysis, AnalysisConfig
 from gammapy.modeling.models import create_crab_spectral_model
 from gammapy.estimators import LightCurveEstimator
 import astropy.units as u
+from cta_tools.logging import setup_logging
+
+
+log = setup_logging()
 
 
 @click.command()
@@ -16,7 +20,13 @@ import astropy.units as u
 def main(config_path, models_path, output, reference):
     config = AnalysisConfig.read(config_path)
     analysis = Analysis(config)
+    log.info(config)
+
     analysis.get_observations()
+    log.info(analysis)
+    log.info(dir(analysis))
+    log.info(analysis.datasets)
+    log.info(analysis.datasets[0].counts)
     analysis.get_datasets()
     analysis.read_models(models_path)
 

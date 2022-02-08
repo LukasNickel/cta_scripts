@@ -10,6 +10,10 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import click
+from cta_tools.logging import setup_logging
+
+
+log = setup_logging()
 
 if matplotlib.get_backend() == "pgf":
     from matplotlib.backends.backend_pgf import PdfPages
