@@ -23,6 +23,7 @@ setup(
             "evaluate_cuts = cta_tools.scripts.evaluate_cuts:main",
             "estimate_flux = cta_tools.scripts.estimate_flux:main",
             "add_delta_t = cta_tools.scripts.add_delta_t:main",
+            "plot_compare_dl2 = cta_tools.scripts.plot_compare_dl2:main",
         ]
     },
 )
