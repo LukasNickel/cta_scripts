@@ -20,6 +20,10 @@ from cta_tools.coords.transform import (
     get_altaz_prediction,
     get_icrs_prediction,
 )
+from cta_tools.logging import setup_logging
+import matplotlib
+log = setup_logging()
+
 
 
 location = EarthLocation.from_geodetic(-17.89139 * u.deg, 28.76139 * u.deg, 2184 * u.m)
@@ -65,9 +69,13 @@ def calc_wobble_thetas(data, source=crab_nebula, n_off=5):
         )
         icrs_preds = reco_coords.transform_to("icrs")
         icrs_pointings = pointing.transform_to('icrs')
+    log.info(f"Pointings are at icrs {icrs_pointings}")
+    log.info(f"Predictions are at {reco_coords}")
+    log.info(f"Predictions are at icrs {icrs_preds}")
     icrs_source = source.transform_to('icrs')
-    
+    log.info(f"Source is at icrs location: {icrs_source}")
     wobble_offset = icrs_pointings.separation(icrs_source)
+    log.info(f"Wobble offset set to {wobble_offset}")
  
     source_angle = icrs_pointings.position_angle(icrs_source)
     off_positions = icrs_pointings.directional_offset_by(
