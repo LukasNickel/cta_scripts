@@ -8,6 +8,8 @@ PYIRF_COLUMN_MAP = {
     "gamma_energy_prediction": "reco_energy",
     "altitude": "pointing_alt",
     "azimuth": "pointing_az",
+    "alt_tel": "pointing_alt",
+    "az_tel": "pointing_az",
     "gammaness": "gh_score",
     "alt_prediction": "reco_alt",
     "az_prediction": "reco_az",
@@ -63,6 +65,9 @@ def rename_columns(astro_table, map_type="pyirf"):
         col_map = OGADF_COLUMN_MAP
     else:
         raise Exception("no such map", map_type)
+    for key in astro_table.keys():
+        if "mc" in key:
+            astro_table.rename_column(key, key.replace("mc", "true"))
     for old, new in col_map.items():
         if old in astro_table.columns:
             astro_table.rename_column(old, new)
@@ -112,4 +117,4 @@ def get_value(df, column):
     if isinstance(df, Table):
         values = values.data
 
-    return values
+    return np.array(values)
