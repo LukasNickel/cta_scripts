@@ -77,3 +77,30 @@ def plot_binned_time_evolution(binned,  ax=None):
     )
     ax.set_xlabel("time w.r.t. the first event [s]")
     return ax
+
+
+def compare_datasets(data, feature, keys, logx=True):
+    """
+    loop over datasets, create a single axes
+    with histograms of all datasets (-> keys)
+    This gets the precomputed histograms,
+    that are cached in the plot
+    scripts.
+    """
+    fig, ax = plt.subplots()
+    for key in keys:
+        ax.hist(
+            data[feature]["bins"][:-1],
+            bins=data[feature]["bins"],
+            weights=data[feature]["values"][key],
+            histtype="step",
+            label=key
+        )
+    ax.set_title(feature)
+    ax.set_yscale("log")
+    if logx:
+        ax.set_xscale("log")
+    ax.legend()
+    return fig
+
+

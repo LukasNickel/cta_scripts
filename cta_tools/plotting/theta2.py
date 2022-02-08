@@ -1,10 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
 from astropy.coordinates import SkyCoord, SkyOffsetFrame
 import astropy.units as u
 from astropy.coordinates.erfa_astrom import erfa_astrom, ErfaAstromInterpolator
-
 from fact.analysis.statistics import li_ma_significance
 
 
@@ -29,7 +27,6 @@ def theta2(
         off_weights = np.full_like(theta2_off, 1).astype('bool')
     ax = ax or plt.gca()
     bins_=np.linspace(window[0], window[1], bins)
-    #from IPython import embed; embed()
     ax.hist(theta2_on, bins=bins_, range=window, histtype="step", color="r", label="ON")
     ax.hist(
         theta2_off,
@@ -42,8 +39,6 @@ def theta2(
         weights=np.full_like(theta2_off, scaling),
     )
 
-    print(theta2_on.shape, theta2_off.shape)
-    print(np.count_nonzero(on_weights), np.count_nonzero(off_weights))
     n_off = np.count_nonzero(theta2_off[off_weights] < cut)
     n_on = np.count_nonzero(theta2_on[on_weights] < cut)
     li_ma = li_ma_significance(n_on, n_off, scaling)
