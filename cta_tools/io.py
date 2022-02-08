@@ -6,7 +6,7 @@ from cta_tools.utils import ffill, remove_nans, add_units, rename_columns, QTabl
 from ctapipe.io import read_table
 from pyirf.simulations import SimulatedEventsInfo
 from ctapipe.instrument.subarray import SubarrayDescription
-from lstchain.io import read_dl2_params, read_mc_dl2_to_QTable
+from lstchain.io.io import read_dl2_params, read_mc_dl2_to_QTable
 from astropy.time import Time
 import logging
 
@@ -34,11 +34,13 @@ def read_mc_dl2(path, drop_nans=True, rename=True):
 
 def read_mc_dl1(path, drop_nans=True, rename=True, images=False, tel_id="LST_LSTCam"):
     events = read_dl1(path, images=images, tel_id=tel_id, root="simulation")
+    log.info(events.keys())
     if drop_nans:
         events = remove_nans(events)
-    mc = read_table(path, "/simulation/event/subarray/shower")
-    mc = add_units(mc)
-    events = join(events, mc, join_type="left", keys=["obs_id", "event_id"])
+    if not "mc_energy" in events.keys():
+        mc = read_table(path, "/simulation/event/subarray/shower")
+        mc = add_units(mc)
+        events = join(events, mc, join_type="left", keys=["obs_id", "event_id"])
     if rename:
         return rename_columns(events)
     return events
@@ -61,31 +63,41 @@ def read_dl1(path, images=False, tel_id="LST_LSTCam", root="dl1"):
         tel = f"tel_{tel_id:03d}"
     else:
         tel = tel_id
-    events = read_table(path, f"/dl1/event/telescope/parameters/{tel}")
+    events = read_table(path, f"/dl1/event/telescope/parameters/{tel}")#, start=0, stop=1000000)
     # lstchain has a different scheme, lets just not use these for now
-    return events
-    pointing = read_table(path, f"/dl1/monitoring/telescope/pointing/{tel}")
-    trigger = read_table(path, "/dl1/event/telescope/trigger")
+#     pointing = read_table(path, f"/dl1/monitoring/telescope/pointing/{tel}")
+#     trigger = read_table(path, "/dl1/event/telescope/trigger")
     if images:
         images = read_table(path, f"/dl1/event/telescope/images/{tel}")
         assert len(events) == len(images)
         events = join(events, images, keys=["obs_id", "event_id"], join_type="left")
       # there are no magic numbers here. move on
-    events["tel_id"] = tel_id
-    events = join(
-        events, trigger, keys=["obs_id", "event_id", "tel_id"], join_type="left"
-    )
+#     events["tel_id"] = tel_id
+#     events = join(
+#         events, trigger, keys=["obs_id", "event_id", "tel_id"], join_type="left"
+#     )
     # that changed at some point
-    time_key = "time" if "time" in trigger.keys() else "telescopetrigger_time"
-    #events = join(events, pointing, keys=time_key, join_type="left")
+    if "time" in events.keys():
+        time_key = "time"
+    elif "dragon_time" in events.keys():
+        time_key = "dragon_time"
+        events["time"] = Time(events[time_key], format="unix")
+    else:
+        time_key = "trigger_time"
+        events["time"] = Time(events[time_key], format="unix")
+    time_key = "time"
+    return events
+#     events = join(events, pointing, keys=time_key, join_type="left")
     # masked columns make everything harder
     events = events.filled(np.nan)
+    alt_key = "altitude" if "altitude" in events.keys() else "alt_tel"
+    az_key = "azimuth" if "azimuth" in events.keys() else "az_tel"
     events["azimuth"] = np.interp(
         events[time_key].mjd,
         pointing[time_key].mjd,
-        pointing["azimuth"].quantity.to_value(u.deg)
+        pointing["az_key"].quantity.to_value(u.deg)
     ) * u.deg
-    events["altitude"] = np.interp(
+    events["alt_key"] = np.interp(
         events[time_key].mjd,
         pointing[time_key].mjd,
         pointing["altitude"].quantity.to_value(u.deg)
@@ -127,7 +139,7 @@ def read_lst_dl2(path, drop_nans=True, rename=True, tel_id="LST_LSTCam"):
     )
     time_key = "time" if "time" in trigger.keys() else "telescopetrigger_time"
     events = join(events, pointing, keys=time_key, join_type="left")
-    # masked columns make everything harder
+#     # masked columns make everything harder
     events = events.filled(np.nan)
 
     events["azimuth"] = np.interp(
@@ -172,7 +184,10 @@ def read_dl3(path):
 
 
 def read_sim_info(path):
-    run_info = read_table(path, "/configuration/simulation/run")
+#     run_info = read_table(path, "/configuration/simulation/run")
+    key = "/simulation/run_config"
+    log.info(f"Reading sim info for file {path} and key {key}")
+    run_info = read_table(path, key)
     e_min = np.unique(run_info.columns["energy_range_min"])
     assert len(e_min) == 1
     e_max = np.unique(run_info.columns["energy_range_max"])
@@ -195,7 +210,7 @@ def read_sim_info(path):
         viewcone=u.Quantity(view_cone[0], u.deg),
     )
 
-    return events.filled(), sim_info
+    return sim_info
 
 
 def load_dl1_sim_info(path):
