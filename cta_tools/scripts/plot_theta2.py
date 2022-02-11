@@ -12,7 +12,7 @@ import astropy.units as u
 from cta_tools.plotting.theta2 import theta2
 from lstchain.io import read_data_dl2_to_QTable, read_mc_dl2_to_QTable
 from astropy.table import Table
-from cta_tools.io import read_lst_dl2, read_dl3, save_plot_data, read_plot_data
+from cta_tools.io import read_lst_dl2_runs, read_dl3, save_plot_data, read_plot_data
 from astropy.coordinates import SkyCoord
 from cta_tools.reco.theta import calc_wobble_thetas
 import logging

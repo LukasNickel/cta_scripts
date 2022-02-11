@@ -22,17 +22,6 @@ def read_to_pyirf(path):
     return events, sim_info
 
 
-def read_mc_dl2(path, drop_nans=True, rename=True):
-    # dont rename yet to join tables together
-    events = read_lst_dl2(path, drop_nans=drop_nans, rename=False)
-    mc = read_table(path, "/simulation/event/subarray/shower")
-    mc = add_units(mc)
-    table = join(events, mc, join_type="left", keys=["obs_id", "event_id"])
-    if rename:
-        return rename_columns(table)
-    return table
-
-
 def read_mc_dl1(path, drop_nans=True, rename=True, images=False, tel_id="LST_LSTCam"):
     events = read_dl1(path, images=images, tel_id=tel_id, root="simulation")
     log.info(events.keys())

@@ -10,7 +10,6 @@ import astropy.units as u
 from astropy.table import vstack, join
 from cta_tools.io import (
     read_lst_dl1,
-    read_lst_dl2,
     read_mc_dl1,
     read_mc_dl2,
     read_sim_info,
