@@ -1,4 +1,5 @@
 import numpy as np
+from lstchain.reco.utils import get_effective_time
 import pandas as pd
 from astropy.table import join, hstack
 import astropy.units as u
@@ -117,64 +118,20 @@ def read_dl1(path, images=False, tel_id="LST_LSTCam", root="dl1"):
     return events
 
 
-def read_lst_dl2(path, drop_nans=True, rename=True, tel_id="LST_LSTCam"):
-    """
-    lst1 only right now. could loop over tels or smth
-    """
-    if isinstance(tel_id, int):
-        tel = f"tel_{tel_id:03d}"
-    else:
-        tel = tel_id
-    energy = read_table(path, f"/dl2/event/telescope/gamma_energy_prediction/{tel}")
-    gh = read_table(path, f"/dl2/event/telescope/gammaness/{tel}")
-    disp = read_table(path, f"/dl2/event/telescope/disp_predictions/{tel}")
-    pointing = read_table(path, "/dl1/monitoring/telescope/pointing/tel_001")
-    trigger = read_table(path, "/dl1/event/telescope/trigger")
-    events = join(energy, gh, keys=["obs_id", "event_id"])
-    events = join(events, disp, keys=["obs_id", "event_id"])
-    # there are no magic numbers here. move on
-    events["tel_id"] = 1
-    events = join(
-        events, trigger, keys=["obs_id", "event_id", "tel_id"], join_type="left"
-    )
-    time_key = "time" if "time" in trigger.keys() else "telescopetrigger_time"
-    events = join(events, pointing, keys=time_key, join_type="left")
-#     # masked columns make everything harder
-    events = events.filled(np.nan)
-
-    events["azimuth"] = np.interp(
-        events[time_key].mjd,
-        pointing[time_key].mjd,
-        pointing["azimuth"].quantity.to_value(u.rad)
-    ) * u.rad
-    events["altitude"] = np.interp(
-        events[time_key].mjd,
-        pointing[time_key].mjd,
-        pointing["altitude"].quantity.to_value(u.rad)
-    ) * u.rad
- 
-
-#    events["azimuth"] = ffill(events["azimuth"])
-#    events["altitude"] = ffill(events["altitude"])
-    events = add_units(events)
-
-    events["x_prediction"].unit = u.m
-    events["y_prediction"].unit = u.m
-    events["alt_prediction"].unit = u.deg
-    events["az_prediction"].unit = u.deg
-    events["gamma_energy_prediction"].unit = u.TeV
-    events["time"] = Time(events[time_key], format="mjd", scale="tai")
-
-    # this is failing because of broken header info for some reason
-    # subarray = SubarrayDescription.from_hdf(path)
-    # events["focal_length"] = subarray.tels[1].optics.equivalent_focal_length
-    events["focal_length"] = 28 * u.m
-
-    if drop_nans:
-        events = remove_nans(events)
-    if rename:
-        return rename_columns(events)
-    return events
+def read_lst_dl2_runs(paths):
+    observations = {}
+    obstime = 0 * u.s
+    for p in paths:
+        data = read_data_dl2_to_QTable(path)
+        data["time"] = Time(data["dragon_time"], format="mjd", scale="tai")
+        log.info(f"Loading of {p} finished")
+        log.info(f"{len(data)} events")
+        observations[data[0]["obs_id"]] = data
+        t_eff, t_elapsed = get_effective_time(data)
+        log.info(f"Effective Observation time: {t_eff}")
+        obstime += t_eff 
+    log.info(f"Combined observation time: {obstime.to(u.min):.2f}")
+    return observations
 
 
 def read_dl3(path):
@@ -184,7 +141,6 @@ def read_dl3(path):
 
 
 def read_sim_info(path):
-#     run_info = read_table(path, "/configuration/simulation/run")
     key = "/simulation/run_config"
     log.info(f"Reading sim info for file {path} and key {key}")
     run_info = read_table(path, key)
@@ -213,26 +169,6 @@ def read_sim_info(path):
     return sim_info
 
 
-def load_dl1_sim_info(path):
-    siminfo = QTable.read(path, '/configuration/simulation/run')
-    for c in siminfo.columns:
-        if c.startswith('corsika') or c.startswith('min') or c.startswith('max') or c.startswith('energy') or c.startswith('simtel') or c.startswith('spectral'):
-            assert len(np.unique(siminfo[c])) == 1
-    return SimulatedEventsInfo(
-        n_showers = np.sum(siminfo['num_showers'] * siminfo['shower_reuse']),
-        energy_min = u.Quantity(siminfo['energy_range_min'][0], siminfo.meta['energy_range_max_UNIT'].decode()),
-        energy_max = u.Quantity(siminfo['energy_range_max'][0], siminfo.meta['energy_range_min_UNIT'].decode()),
-        max_impact = u.Quantity(siminfo['max_scatter_range'][0], siminfo.meta['max_scatter_range_UNIT'].decode()),
-        spectral_index = siminfo['spectral_index'][0],
-        viewcone = u.Quantity(siminfo['max_viewcone_radius'][0], siminfo.meta['max_viewcone_radius_UNIT'].decode()),
-    )
-
-
-def load_dl2_events(path):
-    ## load aict generated tables
-    events = None
-
-
 def save_plot_data(path, data_structure):
     with pd.HDFStore(path) as store:
         for plot_key, plot_dict in data_structure.items():
@@ -244,32 +180,11 @@ def save_plot_data(path, data_structure):
 def read_plot_data(path, data_structure):
     result = {}
     with pd.HDFStore(path) as store:
-        for plot_key, plot_dict in data_structure.items():
+        for feature in store.keys():
+            k = ["bins", "values"]
             result[plot_key] = {}
-            for data_key, data in plot_dict.items():
-                key = f"/{plot_key}/{data_key}"
-                # structure does not need to be completely saved, eg gamma energy is only in dl2
-                if key not in store.keys():
-                    continue
-                result[plot_key][data_key] = store.get(key)
+            for data_key in k:
+                key = f"/{feature}/{data_key}"
+                result[feature][data_key] = store.get(key)
     return result
 
-def read_irf_files(path):
-    """Read the irf file created by lstchain. Wrapper for some QTable calls"""
-    hdus = {
-        "aeff": "EFFECTIVE AREA",
-        "edisp": "ENERGY DISPERSION",
-        "psf": "PSF",
-        "bkg": "BACKGROUND",
-    }
-    result = {}
-    for name, hdu_key in hdus.items():
-        # TODO: Debug possible errors, log and do stuff
-        try:
-            irf = QTable.read(path, hdu=hdu_key)[0]
-        except Exception as e:
-            irf = None
-            log.warning(e)
-        result[name] = irf
-    return result
-    

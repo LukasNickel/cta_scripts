@@ -87,17 +87,6 @@ data_structure = {k:{"bins":None, "values":None} for k in linx+logx}
 
 def load_run(path):
     data = read_lst_dl1(path)
-    try:
-        dl2 = read_lst_dl2(path)
-        data = join(data, dl2, keys=["obs_id", "event_id"], table_names=["dl1", "dl2"])
-        for c in list(data.columns):
-            if c.endswith("dl1"):
-                data.rename_column(c, re.sub("_dl1", "", c))
-            elif c.endswith("dl2"):
-                del data[c]
-            continue
-    except:
-        log.info("Only using dl1 data")
     log.info(f"Loading of {path} finished")
     log.info(f"{len(data)} events")
     return data
@@ -155,6 +144,8 @@ def plot(data, feature, keys, logx=True):
 @click.option("--electrons", "-e")
 @click.option("--source_gammas", "-g")
 @click.option("--binsizes_config", "-b")
+@click.option("--cuts", "-c")
+@click.option("--verbose", "-v", is_flag=True)
 @click.option("--output", "-o", type=click.Path(exists=False, dir_okay=False))
 @click.command()
 def main(
