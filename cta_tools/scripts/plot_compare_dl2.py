@@ -1,4 +1,5 @@
 from cta_tools.plotting import preliminary
+import yaml
 import re
 import pandas as pd
 import numpy as np
@@ -7,7 +8,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import astropy.units as u
 from lstchain.io import read_data_dl2_to_QTable, read_mc_dl2_to_QTable
+from lstchain.reco.utils import get_effective_time, add_delta_t_key
 from astropy.table import vstack, join
+from cta_tools.cuts import create_mask_selection
 from astropy.time import Time
 from cta_tools.io import (
     read_lst_dl1,
@@ -31,7 +34,6 @@ from pyirf.spectral import (
 from cta_tools.logging import setup_logging
 
 
-log = setup_logging()
 if matplotlib.get_backend() == "pgf":
     from matplotlib.backends.backend_pgf import PdfPages
 else:
@@ -91,6 +93,8 @@ def load_mc(path, obstime, spectrum):
 @click.option("--electrons", "-e")
 @click.option("--source_gammas", "-g")
 @click.option("--binsizes_config", "-b")
+@click.option("--cuts", "-c")
+@click.option("--verbose", "-v", is_flag=True)
 @click.option("--output", "-o", type=click.Path(exists=False, dir_okay=False))
 @click.command()
 def main(
@@ -99,14 +103,24 @@ def main(
     electrons,
     source_gammas,
     binsizes_config,
+    cuts,
+    verbose,
     output,
 ):
+    global log
+    log = setup_logging(verbose=verbose)
     observations = {}
     if binsizes_config:
         with open(binsizes_config) as f:
             binsizes = yaml.safe_load(f)
     else:
         binsizes = None
+    if cuts:
+        with open(cuts) as f:
+            selection = yaml.safe_load(f).get("selection")
+    else:
+        selection = None
+    log.info(selection)
 
     cache = Path(output).with_suffix(".h5")
     if cache.exists():
@@ -119,16 +133,22 @@ def main(
             observations[run[0]["obs_id"]] = run
             run_time = (run["time"][-1] - run["time"][0]).to(u.s)
             log.info(f"Observation time: {run_time.to(u.min):.2f}")
-            obstime += run_time
+            t_eff, t_elapsed = get_effective_time(run)
+            log.info(f"lstchain observation time: {t_eff}, {t_elapsed}")
+            obstime += t_eff #run_time
         log.info(f"Combined observation time: {obstime.to(u.min):.2f}")
 
         combined = vstack(list(observations.values()))
+        log.info(combined.keys())
+        if selection:
+            mask = create_mask_selection(combined, selection)
+            combined= combined[mask]
 
         if protons:
             protons = load_mc(protons, obstime, IRFDOC_PROTON_SPECTRUM)
         if electrons:
             electrons = load_mc(electrons, obstime, IRFDOC_ELECTRON_SPECTRUM)
-        if protons and electrons:
+        if electrons and electrons:
             background = vstack([protons, electrons])
         elif protons:
             background = protons
@@ -136,9 +156,16 @@ def main(
             background = electrons
         else:
             background = None
+        if background:
+            if selection:
+                mask = create_mask_selection(background, selection)
+                background= background[mask]
 
         if source_gammas:
             gammas = load_mc(source_gammas, obstime, CRAB_MAGIC_JHEAP2015)
+            if selection:
+                mask = create_mask_selection(gammas, selection)
+                gammas= gammas[mask]
         else:
             gammas = None
 
